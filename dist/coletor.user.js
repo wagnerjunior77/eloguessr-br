@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Eloguessr • Coletar duelos
 // @namespace    eloguessr-local
-// @version      0.7.0
+// @version      0.8.0
 // @description  Carrega duelos no Eloguessr usando sua sessão do GeoGuessr.
 // @match        https://www.geoguessr.com/*
 // @match        https://quem-jogou-eloguessr.novelalpaca1.chatgpt.site/*
@@ -112,7 +112,7 @@ O menu anterior para baixar JSON continua disponível no GeoGuessr.
       const a = players[0].guesses.find(g => g && g.roundNumber === rd.roundNumber);
       const b = players[1].guesses.find(g => g && g.roundNumber === rd.roundNumber);
       if (!validPoint(a) || !validPoint(b)) continue;
-      const r = { caption: 'Round ' + (rd.roundNumber || i + 1),
+      const r = { roundNumber: rd.roundNumber, caption: 'Round ' + (rd.roundNumber || i + 1),
         guesses: { A: point(a), B: point(b) } };
       if (validPoint(rd.panorama)) r.location = point(rd.panorama);
       const healthA = healthFor(duel.teams[0], 0, rd.roundNumber), healthB = healthFor(duel.teams[1], 1, rd.roundNumber);
@@ -130,7 +130,7 @@ O menu anterior para baixar JSON continua disponível no GeoGuessr.
     const rawMovement = duel.movementOptions || duel.options?.movementOptions;
     const movement = rawMovement && ['forbidMoving','forbidRotating','forbidZooming'].every(k => typeof rawMovement[k] === 'boolean')
       ? { forbidMoving: rawMovement.forbidMoving, forbidRotating: rawMovement.forbidRotating, forbidZooming: rawMovement.forbidZooming } : null;
-    return { key: gameId, playerId, target: side === 0 ? 'A' : 'B', rounds, movement };
+    return { key: gameId, playerId, target: side === 0 ? 'A' : 'B', rounds, movement, replayPlayers: { A: players[0].playerId, B: players[1].playerId } };
   }
   function assignDistinct(profiles, candidates) {
     const assigned = new Map();
@@ -204,8 +204,20 @@ O menu anterior para baixar JSON continua disponível no GeoGuessr.
     window.addEventListener('message', event => {
       if (event.origin !== SITE_ORIGIN || !event.data || event.data.channel !== CHANNEL) return;
       const message = event.data;
-      if (message.type === 'ping') { reply({ type: 'ready', version: '0.7.0' }); return; }
+      if (message.type === 'ping') { reply({ type: 'ready', version: '0.8.0' }); return; }
       if (message.type === 'cancel') { if (active.has(message.id)) active.get(message.id).cancelled = true; return; }
+      if (message.type === 'replay' && validId(message.id)) {
+        const { gameId, playerId, round } = message;
+        if (!/^[a-z0-9-]{8,100}$/i.test(gameId || '') || !/^[a-f0-9]{24}$/i.test(playerId || '') || !Number.isInteger(round) || round < 1 || round > 50) {
+          reply({type:'replay-error',id:message.id,message:'Dados do replay inválidos.'}); return;
+        }
+        json('https://game-server.geoguessr.com/api/replays/'+encodeURIComponent(playerId)+'/'+encodeURIComponent(gameId)+'/'+round)
+          .then(events => { if (!Array.isArray(events) || !events.length) throw new Error('Replay indisponível para este round.');
+            reply({type:'replay-result',id:message.id,events:events.filter(e=>e && Number.isFinite(e.time) && typeof e.type==='string' && e.payload && typeof e.payload==='object').slice(0,15000)}); })
+          .catch(() => reply({type:'replay-error',id:message.id,message:'Replay indisponível para este jogador e round.'}));
+        return;
+      }
+
       if (message.type !== 'collect' || !validId(message.id) || !Array.isArray(message.links) || active.has(message.id)) return;
       if (message.links.length < 1 || message.links.length > MAX_PROFILES || message.links.some(link => !getId(link))) {
         reply({ type: 'error', id: message.id, message: 'Confira os links dos perfis.' }); return;
@@ -220,7 +232,7 @@ O menu anterior para baixar JSON continua disponível no GeoGuessr.
         .finally(() => active.delete(message.id));
     });
     window.addEventListener('pagehide', () => { for (const state of active.values()) state.cancelled = true; });
-    reply({ type: 'ready', version: '0.7.0' });
+    reply({ type: 'ready', version: '0.8.0' });
     return;
   }
   if (location.origin !== 'https://www.geoguessr.com') return;

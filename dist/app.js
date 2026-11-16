@@ -46,6 +46,7 @@ function render(){
  renderHealth(round,target);
  updateMap(round,target);
  updateStreetView(round);
+ syncReplayContext();
 }
 function renderHealth(round,target){
  const signature=JSON.stringify([gameIndex,roundIndex,imported,target,round.health]);
@@ -162,6 +163,7 @@ function requestBridgeReady(){bridgeReady=false;window.postMessage({channel:BRID
 function bridgeReset(){if(bridgeTimer)clearTimeout(bridgeTimer);bridgeTimer=null;bridgePending=null;$('generateGames').disabled=false}
 function cancelBridge(){if(bridgePending?.sent)window.postMessage({channel:BRIDGE_CHANNEL,type:'cancel',id:bridgePending.id},location.origin);bridgeReset()}
 function activateData(dataset){
+ stopReplay();
  data=validate(dataset);imported=true;lastSceneKey='';lastEmbedScene='';healthScene='';answers={};revealed=false;gameIndex=roundIndex=0;
  document.querySelector('.demo-badge').innerHTML='<i></i> PARTIDAS IMPORTADAS';document.querySelector('footer span:last-child').textContent='Dados de partidas importadas';
  $('profileDialog').close();render();
@@ -177,7 +179,8 @@ function startBridgeRequest(){
 window.addEventListener('message',event=>{
  if(event.origin!==location.origin||!event.data||event.data.channel!==BRIDGE_CHANNEL)return;
  const msg=event.data;
- if(msg.type==='ready'){const [major=0,minor=0,patch=0]=String(msg.version||'').split('.').map(Number);bridgeReady=major>0||minor>=7;startBridgeRequest();return}
+ if(msg.type==='replay-result'||msg.type==='replay-error'){handleReplayMessage(msg);return}
+ if(msg.type==='ready'){const [major=0,minor=0,patch=0]=String(msg.version||'').split('.').map(Number);bridgeReady=major>0||minor>=8;startBridgeRequest();return}
  if(!bridgePending||msg.id!==bridgePending.id)return;
  if(msg.type==='started'){bridgePending.started=true;$('profileMessage').textContent='Conectado ao GeoGuessr. Buscando jogos...';bridgeTimeout('A coleta demorou demais. Verifique sua conexão e tente novamente.',120000)}
  else if(msg.type==='progress'&&typeof msg.message==='string'){$('profileMessage').textContent=msg.message;bridgeTimeout('A coleta demorou demais. Verifique sua conexão e tente novamente.',120000)}
@@ -197,6 +200,78 @@ $('generateGames').onclick=()=>{
   bridgeReset();$('profileMessage').textContent='Instale ou atualize o coletor, depois recarregue esta página.';
  },2000);
 };
+
+
+// Reprodução local dos eventos reais, sem exibir as identidades dos jogadores.
+let replay = {open:false, key:'', id:'', side:'A', events:[], duration:0, position:0, playing:false, frame:0, lastTick:0, marker:null, mapVisible:false};
+const replayCache=new Map();
+function replayKey(){return gameIndex+':'+roundIndex}
+function replayClock(ms){const sec=Math.floor(Math.max(0,ms)/1000);return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0')}
+let replayRequestTimer=null;
+function replayStopFrame(){if(replay.frame)cancelAnimationFrame(replay.frame);replay.frame=0;replay.playing=false;replay.lastTick=0;$('replayPlay').textContent='▶'}
+function stopReplay(){
+ replayStopFrame();if(replayRequestTimer)clearTimeout(replayRequestTimer);replayRequestTimer=null;replay.open=false;replay.id='';replay.events=[];replay.marker?.setMap(null);replay.marker=null;
+ $('replayUI').hidden=true;document.querySelector('.scene').classList.remove('replaying','replay-map-visible');
+}
+function syncReplayContext(){
+ const game=data.games[gameIndex];$('replayOpen').hidden=!imported || !game.gameId || !game.replayPlayers;
+ if(replay.open && replay.key!==replayKey())stopReplay();
+ if(replay.open && replay.events.length){streetRestrictions=null;renderReplay(replay.position)}
+}
+function selectReplay(side){
+ replayStopFrame();if(replayRequestTimer)clearTimeout(replayRequestTimer);replayRequestTimer=null;replay.marker?.setMap(null);replay.side=side;replay.events=[];replay.position=0;replay.duration=0;replay.id=crypto.randomUUID();
+ $('replayA').classList.toggle('active',side==='A');$('replayB').classList.toggle('active',side==='B');
+ $('replaySeek').value=0;$('replayTime').textContent='0:00 / 0:00';$('replayStatus').textContent='Carregando replay...';
+ const game=data.games[gameIndex],round=game.rounds[roundIndex],playerId=game.replayPlayers?.[side],roundNumber=round.roundNumber;
+ if(!googleActive||!streetView){$('replayStatus').textContent='Aguarde o Street View carregar.';return}
+ if(!Number.isInteger(roundNumber)||!playerId){$('replayStatus').textContent='Dados do replay indisponíveis. Gere as partidas novamente.';return}
+ const key=game.gameId+':'+playerId+':'+roundNumber;
+ if(replayCache.has(key)){receiveReplay(replayCache.get(key));return}
+ replay.cacheKey=key;
+ const requestedId=replay.id;window.postMessage({channel:BRIDGE_CHANNEL,type:'replay',id:requestedId,gameId:game.gameId,playerId,round:roundNumber},location.origin);
+ replayRequestTimer=setTimeout(()=>{if(replay.open&&replay.id===requestedId){replay.id='';$('replayStatus').textContent='O coletor não respondeu. Confira a atualização e tente novamente.'}},30000);
+}
+function handleReplayMessage(msg){
+ if(!replay.open||msg.id!==replay.id)return;
+ if(replayRequestTimer)clearTimeout(replayRequestTimer);replayRequestTimer=null;
+ if(msg.type==='replay-error'){$('replayStatus').textContent=msg.message||'Replay indisponível.';return}
+ if(!Array.isArray(msg.events)||!msg.events.length){$('replayStatus').textContent='Replay indisponível para esta rodada.';return}
+ replayCache.set(replay.cacheKey,msg.events);receiveReplay(msg.events);
+}
+function receiveReplay(events){
+ replay.events=events.filter(e=>e&&Number.isFinite(e.time)&&e.payload&&typeof e.payload==='object').sort((a,b)=>a.time-b.time);
+ if(!replay.events.length){$('replayStatus').textContent='Replay indisponível para esta rodada.';return}
+ replay.duration=Math.max(0,replay.events.at(-1).time-replay.events[0].time);replay.position=0;
+ $('replayStatus').textContent='';streetRestrictions=null;
+ googleMarkers.forEach(m=>m.setMap(null));googleLines.forEach(l=>l.setMap(null));googleMarkers=[];googleLines=[];
+ renderReplay(0);startReplay();
+}
+function renderReplay(ms){
+ if(!replay.events.length||!streetView||!googleMap)return;
+ const end=replay.events[0].time+ms;let pov=null,pano=null,panoZoom=null,mapPos=null,mapZoom=null,pin=null,visible=false;
+ for(const event of replay.events){if(event.time>end)break;const p=event.payload;
+  if(event.type==='PanoPov'&&Number.isFinite(p.heading)&&Number.isFinite(p.pitch))pov={heading:p.heading,pitch:p.pitch};
+  else if(event.type==='PanoPosition'&&typeof p.panoId==='string')pano=normalizePanoramaId(p.panoId);
+  else if(event.type==='PanoZoom'&&Number.isFinite(p.zoom))panoZoom=p.zoom;
+  else if(event.type==='MapPosition'&&Number.isFinite(p.lat)&&Number.isFinite(p.lng))mapPos={lat:p.lat,lng:p.lng};
+  else if(event.type==='MapZoom'&&Number.isFinite(p.zoom))mapZoom=p.zoom;
+  else if((event.type==='PinPosition'||event.type==='GuessWithLatLng')&&Number.isFinite(p.lat)&&Number.isFinite(p.lng))pin={lat:p.lat,lng:p.lng};
+  else if(event.type==='MapDisplay')visible=!!p.isActive;
+ }
+ if(pano&&streetView.getPano()!==pano)streetView.setPano(pano);if(pov)streetView.setPov(pov);if(panoZoom!==null)streetView.setZoom(panoZoom);
+ googleMap.setCenter(mapPos||{lat:0,lng:0});googleMap.setZoom(mapZoom!==null?Math.max(0,Math.min(21,mapZoom)):2);
+ if(pin){if(!replay.marker)replay.marker=new google.maps.Marker({map:googleMap,position:pin});else{replay.marker.setMap(googleMap);replay.marker.setPosition(pin)}}else if(replay.marker)replay.marker.setMap(null);
+ document.querySelector('.scene').classList.toggle('replay-map-visible',visible);
+ if(replay.mapVisible!==visible){replay.mapVisible=visible;google.maps.event.trigger(googleMap,'resize')}
+ $('replaySeek').value=replay.duration?Math.round(ms/replay.duration*1000):0;$('replayTime').textContent=replayClock(ms)+' / '+replayClock(replay.duration);
+}
+function startReplay(){if(!replay.events.length)return;if(replay.position>=replay.duration)replay.position=0;replay.playing=true;replay.lastTick=0;$('replayPlay').textContent='❚❚';replay.frame=requestAnimationFrame(replayTick)}
+function replayTick(now){if(!replay.playing||!replay.open)return;if(replay.lastTick)replay.position=Math.min(replay.duration,replay.position+now-replay.lastTick);replay.lastTick=now;renderReplay(replay.position);if(replay.position>=replay.duration){replayStopFrame();return}replay.frame=requestAnimationFrame(replayTick)}
+$('replayOpen').onclick=()=>{replay.open=true;replay.key=replayKey();replay.mapVisible=false;$('replayUI').hidden=false;document.querySelector('.scene').classList.add('replaying');selectReplay('A')};
+$('replayClose').onclick=()=>{stopReplay();lastSceneKey='';render()};
+$('replayA').onclick=()=>selectReplay('A');$('replayB').onclick=()=>selectReplay('B');
+$('replayPlay').onclick=()=>replay.playing?replayStopFrame():startReplay();
+$('replaySeek').oninput=e=>{replayStopFrame();replay.position=replay.duration*Number(e.target.value)/1000;renderReplay(replay.position)};
 
 render();
 if(typeof window.ELOGUESSR_CONFIG?.googleMapsApiKey==='string' && window.ELOGUESSR_CONFIG.googleMapsApiKey.trim())enableGoogleMaps(window.ELOGUESSR_CONFIG.googleMapsApiKey.trim());

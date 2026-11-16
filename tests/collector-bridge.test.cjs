@@ -58,6 +58,7 @@ function setup(authenticated = true, geoCount = 2, movement = {forbidMoving:true
       if (url.includes('/api/v3/users/')) data={nick:url.endsWith(player2)?'Teste 2':'Teste'};
       else if (url.includes('/game-ids')) { const second=url.includes(player2);data={userId:second?player2:player,gameIds:[second?gameId2:gameId]}; }
       else if (url.includes('/api/duels/')) data=url.endsWith(gameId2)?fixture2:fixture;
+      else if (url.includes('/api/replays/')) data=[{time:1000,type:'PanoPov',payload:{heading:90,pitch:0}},{time:2000,type:'MapDisplay',payload:{isActive:true}}];
       else throw Error('unexpected URL');
       return {ok:true,status:200,json:async()=>data};
     };
@@ -86,7 +87,7 @@ test('carrega duelo, HP e panorama sem outra aba ou JSON', async()=>{
   h.site.win.postMessage({channel,type:'collect',mode:'any',id:'12345678-aaaa-bbbb-cccc-123456789012',links:[geoOrigin+'/user/'+player]},siteOrigin);
   const reply=await waitFor(()=>h.messages.find(m=>m.type==='result'));
   assert.equal(reply.data.profiles.length,1);assert.equal(reply.data.profiles[0].id,player);assert.equal(reply.data.games.length,1);
-  const game=reply.data.games[0];assert.equal(game.gameId,gameId);assert.equal(game.movement.forbidRotating,true);assert.equal(game.movement.forbidMoving,true);assert.equal(game.movement.forbidZooming,true);assert.equal(game.target,'B');assert.equal(game.rounds.length,1);assert.equal(game.rounds[0].caption,'Round 2');assert.equal(game.rounds[0].panoId,'second');
+  const game=reply.data.games[0];assert.equal(game.gameId,gameId);assert.equal(game.replayPlayers.A,opponent);assert.equal(game.replayPlayers.B,player);assert.equal(game.rounds[0].roundNumber,2);assert.equal(game.movement.forbidRotating,true);assert.equal(game.movement.forbidMoving,true);assert.equal(game.movement.forbidZooming,true);assert.equal(game.target,'B');assert.equal(game.rounds.length,1);assert.equal(game.rounds[0].caption,'Round 2');assert.equal(game.rounds[0].panoId,'second');
   assert.equal(game.rounds[0].health.A.after,5500);assert.equal(game.rounds[0].health.B.after,4000);
   assert.equal(h.calls.length,3,'a mesma solicitação não deve ser processada duas vezes');
   assert.ok(h.calls.every(call=>call.options.credentials==='include'));
@@ -141,4 +142,17 @@ for (const [mode,movement] of [
   h.site.win.postMessage({channel,type:'collect',mode,id:'66666666-aaaa-bbbb-cccc-123456789012',links:[geoOrigin+'/user/'+player]},siteOrigin);
   const reply=await waitFor(()=>h.messages.find(m=>m.type==='result'));
   assert.deepEqual(JSON.parse(JSON.stringify(reply.data.games[0].movement)),movement);
+});
+
+test('busca eventos de replay pela ponte sem revelar nome de jogador', async()=>{
+ const h=setup(true,0),id='77777777-aaaa-bbbb-cccc-123456789012';
+ h.site.win.postMessage({channel,type:'replay',id,gameId,playerId:player,round:2},siteOrigin);
+ const result=await waitFor(()=>h.messages.find(m=>m.type==='replay-result'));
+ assert.equal(result.events.length,2);assert.equal(result.events[0].type,'PanoPov');
+ assert.match(h.calls[0].url,/api\/replays\//);assert.equal(result.events.some(e=>e.playerId),false);
+});
+test('rejeita caminho de replay inválido', async()=>{
+ const h=setup(true,0),id='88888888-aaaa-bbbb-cccc-123456789012';
+ h.site.win.postMessage({channel,type:'replay',id,gameId:'../',playerId:player,round:1},siteOrigin);
+ await waitFor(()=>h.messages.find(m=>m.type==='replay-error'));assert.equal(h.calls.length,0);
 });
