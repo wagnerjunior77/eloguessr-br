@@ -1,19 +1,28 @@
 // ==UserScript==
 // @name         Eloguessr • Coletar duelos
 // @namespace    eloguessr-local
-// @version      0.3.0
-// @description  Exporta partidas disponíveis dos perfis informados para o Eloguessr, usando sua sessão GeoGuessr.
+// @version      0.4.0
+// @description  Carrega duelos no Eloguessr usando sua sessão aberta do GeoGuessr.
 // @match        https://www.geoguessr.com/*
+// @match        https://quem-jogou-eloguessr.novelalpaca1.chatgpt.site/*
+// @run-at       document-start
+// @noframes
 // @grant        GM_registerMenuCommand
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_deleteValue
+// @grant        GM_addValueChangeListener
+// @grant        GM_removeValueChangeListener
 // ==/UserScript==
 
 /*
 COMO USAR
-1. Instale este script em um gerenciador de userscripts e entre no GeoGuessr.
-2. No menu do gerenciador, escolha "Eloguessr: coletar duelos".
-3. Informe de 1 a 10 links de perfis e clique em Coletar. Importe o JSON baixado no Eloguessr.
-O script só consulta o GeoGuessr após o clique. Sua sessão e cookies não são enviados ao Eloguessr.
-A conta conectada precisa ter acesso ao histórico. A disponibilidade varia por perfil.
+1. Atualize este userscript no Tampermonkey e recarregue o GeoGuessr e o Eloguessr.
+2. Deixe ao menos uma aba do GeoGuessr aberta e conectada no mesmo navegador.
+3. Em Perfis no Eloguessr, cole os links e clique em Gerar jogos.
+A busca só começa quando você clica. A sessão e os cookies ficam no GeoGuessr;
+os dados das partidas passam diretamente entre as abas do mesmo navegador.
+O menu anterior para baixar JSON continua disponível no GeoGuessr.
 */
 (function () {
   'use strict';
@@ -125,13 +134,127 @@ A conta conectada precisa ter acesso ao histórico. A disponibilidade varia por 
       const { key, ...game } = x.game; return game;
     })) };
   }
+  async function collectProfiles(links, progress = () => {}, isCancelled = () => false) {
+    if (!Array.isArray(links)) throw new Error('Informe os links dos perfis.');
+    const cleanLinks = links.map(x => typeof x === 'string' ? x.trim() : '').filter(Boolean);
+    const ids = cleanLinks.map(getId);
+    if (ids.length < 1 || ids.length > MAX_PROFILES || ids.some(id => !id) || new Set(ids).size !== ids.length)
+      throw new Error('Informe de 1 a 10 links válidos e diferentes de perfis GeoGuessr.');
+    const profiles = [], candidates = new Map(), cache = new Map();
+    for (let i = 0; i < ids.length; i++) {
+      if (isCancelled()) throw new Error('Coleta cancelada.');
+      const id = ids[i]; progress(`Consultando perfil ${i + 1} de ${ids.length}...`);
+      const user = await json('https://www.geoguessr.com/api/v3/users/' + encodeURIComponent(id));
+      if (!user || typeof user.nick !== 'string') throw new Error('O perfil retornado não contém um nome reconhecível.');
+      const p = { id, name: user.nick, url: cleanLinks[i] }; profiles.push(p);
+      const history = await json('https://www.geoguessr.com/api/v4/game-history/' + encodeURIComponent(id) + '/game-ids');
+      const games = shuffle(gameIds(history)).slice(0, MAX_DUELS_PER_PROFILE), usable = [];
+      for (let n = 0; n < games.length; n++) {
+        if (isCancelled()) throw new Error('Coleta cancelada.');
+        progress(`Analisando ${p.name}: duelo ${n + 1} de ${games.length}...`);
+        const gameId = games[n];
+        if (!cache.has(gameId)) {
+          await wait(350);
+          try { cache.set(gameId, await json('https://game-server.geoguessr.com/api/duels/' + encodeURIComponent(gameId))); }
+          catch (err) { if (err.status === 404) { cache.set(gameId, null); continue; } throw err; }
+        }
+        if (!cache.get(gameId)) continue;
+        const game = extract(cache.get(gameId), id, gameId);
+        if (game) usable.push(game);
+      }
+      candidates.set(id, usable);
+    }
+    if (isCancelled()) throw new Error('Coleta cancelada.');
+    const chosen = assignDistinct(profiles, candidates);
+    if (chosen.missing.length) throw new Error('Não foi possível obter um duelo solo distinto com palpites dos dois jogadores para: ' + chosen.missing.map(p => p.name).join(', ') + '. O histórico pode estar vazio, inacessível ou conter partidas sem dados completos.');
+    return { profiles, games: chosen.games };
+  }
+
+  const SITE_ORIGIN = 'https://quem-jogou-eloguessr.novelalpaca1.chatgpt.site';
+  const REQUEST_KEY = 'eloguessr.bridge.request.v1';
+  const RESPONSE_PREFIX = 'eloguessr.bridge.response.v1.';
+  const CANCEL_PREFIX = 'eloguessr.bridge.cancel.v1.';
+  const CHANNEL = 'eloguessr-bridge-v1';
+  const validId = id => typeof id === 'string' && /^[a-z0-9-]{20,80}$/i.test(id);
+
+  if (location.origin === SITE_ORIGIN) {
+    const active = new Map();
+    const reply = message => window.postMessage({ channel: CHANNEL, ...message }, SITE_ORIGIN);
+    const cancel = id => {
+      if (!validId(id)) return;
+      const listener = active.get(id);
+      if (listener !== undefined) { GM_removeValueChangeListener(listener); active.delete(id); }
+      const queued = GM_getValue(REQUEST_KEY, null);
+      if (queued && queued.id === id) GM_deleteValue(REQUEST_KEY);
+      GM_setValue(CANCEL_PREFIX + id, true); GM_deleteValue(RESPONSE_PREFIX + id);
+      setTimeout(() => GM_deleteValue(CANCEL_PREFIX + id), 180000);
+    };
+    window.addEventListener('message', event => {
+      if (event.source !== window || event.origin !== SITE_ORIGIN || !event.data || event.data.channel !== CHANNEL) return;
+      const message = event.data;
+      if (message.type === 'ping') { reply({ type: 'ready', version: '0.4.0' }); return; }
+      if (message.type === 'cancel') { cancel(message.id); return; }
+      if (message.type !== 'collect' || !validId(message.id) || !Array.isArray(message.links) || active.has(message.id)) return;
+      if (message.links.length < 1 || message.links.length > MAX_PROFILES || message.links.some(link => !getId(link))) {
+        reply({ type: 'error', id: message.id, message: 'Confira os links dos perfis.' }); return;
+      }
+      const key = RESPONSE_PREFIX + message.id;
+      const listener = GM_addValueChangeListener(key, (_name, _oldValue, value, remote) => {
+        if (!remote || !value || value.id !== message.id || !['started','progress','result','error'].includes(value.type)) return;
+        reply(value);
+        if (value.type === 'result' || value.type === 'error') {
+          GM_removeValueChangeListener(listener); active.delete(message.id); GM_deleteValue(key);
+        }
+      });
+      active.set(message.id, listener);
+      GM_setValue(REQUEST_KEY, { id: message.id, links: message.links, createdAt: Date.now() });
+    });
+    window.addEventListener('pagehide', () => {
+      for (const id of [...active.keys()]) cancel(id);
+    });
+    reply({ type: 'ready', version: '0.4.0' });
+    return;
+  }
+  if (location.origin !== 'https://www.geoguessr.com') return;
+
+  const handled = new Set();
+  async function processRequest(request) {
+    if (!request || !validId(request.id) || !Array.isArray(request.links) || !Number.isFinite(request.createdAt) || Math.abs(Date.now() - request.createdAt) > 180000 || handled.has(request.id)) return;
+    handled.add(request.id);
+    const key = RESPONSE_PREFIX + request.id;
+    const send = (type, extra = {}) => GM_setValue(key, { id: request.id, type, ...extra });
+    const work = async lock => {
+      if (!lock) return;
+      const current = GM_getValue(REQUEST_KEY, null);
+      if (!current || current.id !== request.id || GM_getValue(CANCEL_PREFIX + request.id, false)) return;
+      GM_deleteValue(REQUEST_KEY); send('started');
+      const cancelled = () => Boolean(GM_getValue(CANCEL_PREFIX + request.id, false));
+      try { const data = await collectProfiles(request.links, message => send('progress', { message }), cancelled); if (!cancelled()) send('result', { data }); }
+      catch (error) { if (!cancelled()) send('error', { message: error && error.message || 'Não foi possível coletar as partidas.' }); }
+      finally { GM_deleteValue(CANCEL_PREFIX + request.id); }
+    };
+    const fail = message => {
+      const current = GM_getValue(REQUEST_KEY, null);
+      if (current && current.id === request.id) GM_deleteValue(REQUEST_KEY);
+      if (!GM_getValue(CANCEL_PREFIX + request.id, false)) send('error', { message });
+    };
+    if (navigator.locks && typeof navigator.locks.request === 'function') {
+      try { await navigator.locks.request('eloguessr-' + request.id, { ifAvailable: true }, work); }
+      catch (_) { fail('Não foi possível iniciar a coleta no GeoGuessr.'); }
+    } else {
+      fail('Este navegador não oferece a coordenação necessária entre abas. Tente no Chrome ou Edge.');
+    }
+  }
+  GM_addValueChangeListener(REQUEST_KEY, (_name, _oldValue, value, remote) => { if (remote && value) processRequest(value); });
+  const queued = GM_getValue(REQUEST_KEY, null); if (queued) processRequest(queued);
+
   function show() {
     if (document.getElementById('eloguessr-collector')) return;
     const back = document.createElement('div'); back.id = 'eloguessr-collector';
     back.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:#000b;display:flex;align-items:center;justify-content:center;padding:20px;font-family:Arial,sans-serif;color:#eee';
     const box = document.createElement('div'); box.style.cssText = 'width:min(520px,100%);background:#111b17;border:1px solid #405342;border-radius:12px;padding:24px;box-shadow:0 12px 70px #0008';
     const heading = document.createElement('h2'); heading.textContent = 'Coletar para o Eloguessr'; heading.style.margin = '0 0 12px';
-    const info = document.createElement('p'); info.textContent = 'Cole de 1 a 10 links de perfis, um por linha. A coleta usa sua sessão do GeoGuessr e só começa ao clicar no botão. O acesso aos históricos ainda depende das permissões da sua conta.'; info.style.cssText = 'font-size:14px;line-height:1.5;color:#bdcbbf';
+    const info = document.createElement('p'); info.textContent = 'Cole de 1 a 10 links de perfis, um por linha. Esta opção baixa um JSON; também é possível gerar diretamente pelo Eloguessr com esta aba aberta.'; info.style.cssText = 'font-size:14px;line-height:1.5;color:#bdcbbf';
     const input = document.createElement('textarea'); input.placeholder = 'https://www.geoguessr.com/user/...'; input.rows = 6; input.style.cssText = 'box-sizing:border-box;width:100%;padding:12px;background:#09110d;border:1px solid #536658;border-radius:8px;color:white;resize:vertical;font:14px monospace';
     const status = document.createElement('p'); status.style.cssText = 'font-size:13px;line-height:1.5;white-space:pre-wrap;color:#c8dcae'; status.textContent = 'Nenhuma coleta foi iniciada.';
     const buttons = document.createElement('div'); buttons.style.cssText = 'display:flex;gap:10px';
@@ -139,48 +262,13 @@ A conta conectada precisa ter acesso ao histórico. A disponibilidade varia por 
     const close = document.createElement('button'); close.textContent = 'Fechar'; close.style.cssText = 'padding:11px 15px;background:#25372c;color:white;border:0;border-radius:6px;cursor:pointer';
     let cancelled = false; close.onclick = () => { cancelled = true; back.remove(); };
     collect.onclick = async () => {
-      const links = input.value.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
-      const ids = links.map(getId);
-      if (ids.length < 1 || ids.length > MAX_PROFILES || ids.some(id => !id) || new Set(ids).size !== ids.length) {
-        status.textContent = 'Informe de 1 a 10 links válidos e diferentes de perfis GeoGuessr.'; return;
-      }
       collect.disabled = true; input.disabled = true; collect.style.opacity = '.5';
       try {
-        const profiles = [], candidates = new Map(), cache = new Map();
-        for (let i = 0; i < ids.length; i++) {
-          if (cancelled) return;
-          const id = ids[i]; status.textContent = `Consultando perfil ${i + 1} de ${ids.length}...`;
-          const user = await json('https://www.geoguessr.com/api/v3/users/' + encodeURIComponent(id));
-          if (!user || typeof user.nick !== 'string') throw new Error('O perfil retornado não contém um nome reconhecível.');
-          const p = { id, name: user.nick, url: links[i] }; profiles.push(p);
-          const history = await json('https://www.geoguessr.com/api/v4/game-history/' + encodeURIComponent(id) + '/game-ids');
-          const games = shuffle(gameIds(history)).slice(0, MAX_DUELS_PER_PROFILE);
-          const usable = [];
-          for (let n = 0; n < games.length; n++) {
-            if (cancelled) return;
-            status.textContent = `Analisando ${p.name}: duelo ${n + 1} de ${games.length}...`;
-            const gameId = games[n];
-            if (!cache.has(gameId)) {
-              await wait(350);
-              try {
-                cache.set(gameId, await json('https://game-server.geoguessr.com/api/duels/' + encodeURIComponent(gameId)));
-              } catch (err) {
-                // Algumas partidas antigas não estão mais disponíveis.
-                if (err.status === 404) { cache.set(gameId, null); continue; }
-                throw err;
-              }
-            }
-            if (!cache.get(gameId)) continue;
-            const game = extract(cache.get(gameId), id, gameId);
-            if (game) usable.push(game);
-          }
-          candidates.set(id, usable);
-        }
+        const links = input.value.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+        const data = await collectProfiles(links, message => { status.textContent = message; }, () => cancelled);
         if (cancelled) return;
-        const chosen = assignDistinct(profiles, candidates);
-        if (chosen.missing.length) throw new Error('Não foi possível obter um duelo solo distinto com palpites dos dois jogadores para: ' + chosen.missing.map(p => p.name).join(', ') + '. O histórico pode estar vazio, inacessível ou conter partidas sem dados completos.');
-        const blob = new Blob([JSON.stringify({ profiles, games: chosen.games }, null, 2)], { type: 'application/json' });
-        const href = URL.createObjectURL(blob); const a = document.createElement('a');
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const href = URL.createObjectURL(blob), a = document.createElement('a');
         a.href = href; a.download = 'eloguessr-partidas.json'; document.body.append(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(href), 30000);
         status.textContent = 'Arquivo gerado. Importe-o na página do Eloguessr.';
