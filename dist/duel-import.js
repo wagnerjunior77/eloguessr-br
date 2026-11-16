@@ -93,7 +93,7 @@
     const found = new Set([...assigned.values()].map(x => x.id));
     const missing = cleanProfiles.filter(p => !found.has(p.id));
     const games = shuffled([...assigned.values()].map(({ game }) => ({
-      playerId: game.playerId, target: game.target, rounds: game.rounds
+      gameId: game.key, playerId: game.playerId, target: game.target, rounds: game.rounds
     })));
     return { data: { profiles: cleanProfiles, games }, missing, skippedRounds };
   }

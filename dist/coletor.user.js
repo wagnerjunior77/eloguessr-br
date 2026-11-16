@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Eloguessr • Coletar duelos
 // @namespace    eloguessr-local
-// @version      0.5.0
+// @version      0.5.1
 // @description  Carrega duelos no Eloguessr usando sua sessão do GeoGuessr.
 // @match        https://www.geoguessr.com/*
 // @match        https://quem-jogou-eloguessr.novelalpaca1.chatgpt.site/*
@@ -144,7 +144,7 @@ O menu anterior para baixar JSON continua disponível no GeoGuessr.
       assign(p.id, new Set());
     const found = new Set([...assigned.values()].map(x => x.id));
     return { missing: profiles.filter(p => !found.has(p.id)), games: shuffle([...assigned.values()].map(x => {
-      const { key, ...game } = x.game; return game;
+      const { key, ...game } = x.game; return { ...game, gameId: key };
     })) };
   }
   async function collectProfiles(links, progress = () => {}, isCancelled = () => false) {
@@ -196,7 +196,7 @@ O menu anterior para baixar JSON continua disponível no GeoGuessr.
     window.addEventListener('message', event => {
       if (event.origin !== SITE_ORIGIN || !event.data || event.data.channel !== CHANNEL) return;
       const message = event.data;
-      if (message.type === 'ping') { reply({ type: 'ready', version: '0.5.0' }); return; }
+      if (message.type === 'ping') { reply({ type: 'ready', version: '0.5.1' }); return; }
       if (message.type === 'cancel') { if (active.has(message.id)) active.get(message.id).cancelled = true; return; }
       if (message.type !== 'collect' || !validId(message.id) || !Array.isArray(message.links) || active.has(message.id)) return;
       if (message.links.length < 1 || message.links.length > MAX_PROFILES || message.links.some(link => !getId(link))) {
@@ -211,7 +211,7 @@ O menu anterior para baixar JSON continua disponível no GeoGuessr.
         .finally(() => active.delete(message.id));
     });
     window.addEventListener('pagehide', () => { for (const state of active.values()) state.cancelled = true; });
-    reply({ type: 'ready', version: '0.5.0' });
+    reply({ type: 'ready', version: '0.5.1' });
     return;
   }
   if (location.origin !== 'https://www.geoguessr.com') return;
