@@ -20,6 +20,7 @@ let googleReady=false, googleActive=false, googleAuthFailed=false, googleKeyUsed
 let embedActive=false, embedKey='', lastEmbedScene='';
 let healthScene='',healthAnimation=0;
 let streetRestrictions=null, restoringView=false;
+StreetViewLock.install(document.getElementById('streetview'), () => streetRestrictions);
 const $=id=>document.getElementById(id);
 function make(tag,cls,text){const el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=text;return el}
 function render(){
