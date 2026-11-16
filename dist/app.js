@@ -8,10 +8,17 @@ const images=[
 ];
 const profiles=[{id:'nina',name:'Nina',url:''},{id:'caio',name:'Caio',url:''},{id:'leo',name:'Léo',url:''}];
 function demoRound(i, seed){const locations=[[-13.1,-58.2],[46.8,8.2],[35.4,137.1],[-25.2,133.7],[48.6,-113.8]]; const c=locations[(i+seed)%locations.length];return {image:images[(i+seed)%images.length],caption:'Paisagem de demonstração',location:{lat:c[0],lng:c[1]},guesses:{A:{lat:c[0]+(seed+1)*2.6,lng:c[1]-4.3},B:{lat:c[0]-3.3,lng:c[1]+(i+1)*2.2}}}}
-const demo={profiles,games:['caio','leo','nina'].map((playerId,seed)=>({playerId,target:'A',rounds:Array.from({length:5},(_,i)=>demoRound(i,seed))}))};
+// Dados de vida fictícios somente para a demonstração.
+const demoHealth=[
+ {A:[6000,6000,4900,4900,5200,3900],B:[6000,4800,4800,3500,3500,2400]},
+ {A:[6000,4200,4200,2800,3100,3100],B:[6000,6000,4800,4800,3600,2400]},
+ {A:[6000,6000,5100,4200,4200,3200],B:[6000,5200,5200,5200,4200,2500]}
+];
+const demo={profiles,games:['caio','leo','nina'].map((playerId,seed)=>({playerId,target:'A',rounds:Array.from({length:5},(_,i)=>{const round=demoRound(i,seed);round.health=Object.fromEntries(['A','B'].map(side=>[side,{before:demoHealth[seed][side][i],after:demoHealth[seed][side][i+1],max:6000}]));return round})}))};
 let data=structuredClone(demo), gameIndex=0, roundIndex=0, answers={}, map, mapLayer, imported=false;
 let googleReady=false, googleActive=false, googleAuthFailed=false, googleKeyUsed='', googleMap, googleMarkers=[], googleLines=[], streetView, streetViewService, streetViewRequest=0, lastSceneKey='';
 let embedActive=false, embedKey='', lastEmbedScene='';
+let healthScene='',healthAnimation=0;
 const $=id=>document.getElementById(id);
 function make(tag,cls,text){const el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=text;return el}
 function render(){
@@ -30,8 +37,26 @@ function render(){
   b.append(av,info,make('span','radio'));b.onclick=()=>{if(selected)delete answers[gameIndex];else answers[gameIndex]=p.id;render()};$('playerOptions').append(b)
  });
  const complete=done===data.games.length;$('submitButton').disabled=!complete;$('submitStatus').innerHTML=complete?'<span>✓</span> Tudo pronto para revelar':'<span>◌</span> Responda todos os jogos para revelar';
+ renderHealth(round,target);
  updateMap(round,target);
  updateStreetView(round);
+}
+function renderHealth(round,target){
+ const signature=JSON.stringify([gameIndex,roundIndex,imported,target,round.health]);
+ if(signature===healthScene)return;healthScene=signature;const token=++healthAnimation;
+ const format=new Intl.NumberFormat('pt-BR');
+ for(const side of ['A','B']){
+  const h=round.health?.[side], label=$('healthName'+side),value=$('healthValue'+side),fill=$('healthFill'+side),change=$('healthChange'+side);
+  label.textContent='Jogador '+side+(target===side?' ★':'');
+  const valid=h && Number.isFinite(h.before) && h.before>=0 && Number.isFinite(h.after) && h.after>=0 && Number.isFinite(h.max) && h.max>0 && h.before<=h.max && h.after<=h.max;
+  if(!valid){value.textContent='—';value.removeAttribute('aria-label');fill.style.width='0%';change.textContent='Vida indisponível';change.className='health-change';continue}
+  const delta=h.after-h.before;
+  value.textContent=format.format(h.before)+' HP';fill.style.transition='none';fill.style.width=(100*h.before/h.max)+'%';
+  change.textContent=delta===0?'Sem alteração':(delta>0?'+':'−')+format.format(Math.abs(delta))+' HP';
+  change.className='health-change '+(delta>0?'gain':delta<0?'loss':'');
+  value.setAttribute('aria-label','Vida no início: '+format.format(h.before)+'; no fim: '+format.format(h.after)+' pontos');
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{if(token!==healthAnimation)return;fill.style.transition='';fill.style.width=(100*h.after/h.max)+'%';value.textContent=format.format(h.after)+' HP'}));
+ }
 }
 function updateLeafletMap(round,target){if(!window.L)return;if(!map){map=L.map('leafletMap',{zoomControl:true,scrollWheelZoom:false,attributionControl:true});L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap contributors'}).addTo(map);mapLayer=L.layerGroup().addTo(map)}mapLayer.clearLayers();const points=[];['A','B'].forEach(letter=>{const p=round.guesses[letter];points.push([p.lat,p.lng]);const icon=L.divIcon({className:'',html:'<div class="map-pin '+letter.toLowerCase()+'">'+letter+(target===letter?'<span>★</span>':'')+'</div>',iconSize:[27,27],iconAnchor:[13,13]});L.marker([p.lat,p.lng],{icon}).addTo(mapLayer)});if(round.location){const p=round.location;points.push([p.lat,p.lng]);L.marker([p.lat,p.lng],{icon:L.divIcon({className:'map-location',html:'✚',iconSize:[20,20],iconAnchor:[10,10]})}).addTo(mapLayer);['A','B'].forEach(letter=>L.polyline([[p.lat,p.lng],[round.guesses[letter].lat,round.guesses[letter].lng]],{color:letter==='A'?'#6f913e':'#688ba2',weight:2,dashArray:'4 4'}).addTo(mapLayer))}map.fitBounds(points,{padding:[28,28],maxZoom:7});setTimeout(()=>map.invalidateSize(),50)}
 function updateMap(round,target){

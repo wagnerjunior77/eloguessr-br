@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Eloguessr • Coletar duelos
 // @namespace    eloguessr-local
-// @version      0.2.0
+// @version      0.3.0
 // @description  Exporta partidas disponíveis dos perfis informados para o Eloguessr, usando sua sessão GeoGuessr.
 // @match        https://www.geoguessr.com/*
 // @grant        GM_registerMenuCommand
@@ -72,6 +72,16 @@ A conta conectada precisa ter acesso ao histórico. A disponibilidade varia por 
       throw new Error('O duelo recebido não contém listas de palpites.');
     const side = players.findIndex(p => String(p.playerId || '').toLowerCase() === playerId);
     if (side < 0) return null;
+    // Saúde pertence à equipe, na mesma ordem usada para A e B.
+    const healthFor = (team, index, roundNumber) => {
+      if (!Array.isArray(team.roundResults)) return null;
+      const rr = team.roundResults.find(item => item && item.roundNumber === roundNumber);
+      if (!rr || !Number.isFinite(rr.healthBefore) || !Number.isFinite(rr.healthAfter) || rr.healthBefore < 0 || rr.healthAfter < 0) return null;
+      const configured = index === 0 ? duel.options?.initialHealthTeamOne : duel.options?.initialHealthTeamTwo;
+      const allValues = team.roundResults.flatMap(item => item ? [item.healthBefore, item.healthAfter] : []).filter(value => Number.isFinite(value) && value >= 0);
+      const max = Math.max(1, configured || 0, duel.initialHealth || 0, duel.options?.initialHealth || 0, ...allValues);
+      return { before: rr.healthBefore, after: rr.healthAfter, max };
+    };
     const rounds = [];
     for (let i = 0; i < duel.rounds.length; i++) {
       const rd = duel.rounds[i];
@@ -83,6 +93,8 @@ A conta conectada precisa ter acesso ao histórico. A disponibilidade varia por 
       const r = { caption: 'Round ' + (rd.roundNumber || i + 1),
         guesses: { A: point(a), B: point(b) } };
       if (validPoint(rd.panorama)) r.location = point(rd.panorama);
+      const healthA = healthFor(duel.teams[0], 0, rd.roundNumber), healthB = healthFor(duel.teams[1], 1, rd.roundNumber);
+      if (healthA || healthB) r.health = { A: healthA, B: healthB };
       if (rd.panorama && typeof rd.panorama === 'object') {
         r.panorama = rd.panorama;
         const panoId = rd.panorama.panoId || rd.panorama.pano;
