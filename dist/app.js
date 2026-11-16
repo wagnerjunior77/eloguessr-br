@@ -17,7 +17,7 @@ const demoHealth=[
 const demo={profiles,games:['caio','leo','nina'].map((playerId,seed)=>({playerId,target:'A',rounds:Array.from({length:5},(_,i)=>{const round=demoRound(i,seed);round.health=Object.fromEntries(['A','B'].map(side=>[side,{before:demoHealth[seed][side][i],after:demoHealth[seed][side][i+1],max:6000}]));return round})}))};
 let data=structuredClone(demo), gameIndex=0, roundIndex=0, answers={}, revealed=false, map, mapLayer, imported=false;
 let googleReady=false, googleActive=false, googleAuthFailed=false, googleKeyUsed='', googleMap, googleMarkers=[], googleLines=[], streetView, streetViewService, streetViewRequest=0, lastSceneKey='';
-let embedActive=false, embedKey='', lastEmbedScene='';
+let embedActive=true, embedKey='', lastEmbedScene='';
 let healthScene='',healthAnimation=0;
 let streetRestrictions=null, restoringView=false;
 const $=id=>document.getElementById(id);
@@ -46,7 +46,6 @@ function render(){
  renderHealth(round,target);
  updateMap(round,target);
  updateStreetView(round);
- syncReplayContext();
 }
 function renderHealth(round,target){
  const signature=JSON.stringify([gameIndex,roundIndex,imported,target,round.health]);
@@ -67,8 +66,8 @@ function renderHealth(round,target){
 }
 function updateLeafletMap(round,target){if(!window.L)return;if(!map){map=L.map('leafletMap',{zoomControl:true,scrollWheelZoom:false,attributionControl:true});L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap contributors'}).addTo(map);mapLayer=L.layerGroup().addTo(map)}mapLayer.clearLayers();const points=[];['A','B'].forEach(letter=>{const p=round.guesses[letter];points.push([p.lat,p.lng]);const icon=L.divIcon({className:'',html:'<div class="map-pin '+letter.toLowerCase()+'">'+letter+(target===letter?'<span>★</span>':'')+'</div>',iconSize:[27,27],iconAnchor:[13,13]});L.marker([p.lat,p.lng],{icon}).addTo(mapLayer)});if(round.location){const p=round.location;points.push([p.lat,p.lng]);L.marker([p.lat,p.lng],{icon:L.divIcon({className:'map-location',html:'✚',iconSize:[20,20],iconAnchor:[10,10]})}).addTo(mapLayer);['A','B'].forEach(letter=>L.polyline([[p.lat,p.lng],[round.guesses[letter].lat,round.guesses[letter].lng]],{color:letter==='A'?'#6f913e':'#688ba2',weight:2,dashArray:'4 4'}).addTo(mapLayer))}map.fitBounds(points,{padding:[28,28],maxZoom:7});setTimeout(()=>map.invalidateSize(),50)}
 function updateMap(round,target){
- const shell=document.querySelector('.map-shell');shell.hidden=embedActive; $('embedMapNotice').hidden=!embedActive; $('scene').classList.toggle('embed-mode',embedActive);
- if(embedActive){$('leafletMap').hidden=true;$('googleMap').hidden=true;return}
+ const shell=document.querySelector('.map-shell');shell.hidden=imported && (!googleActive || !googleReady); $('embedMapNotice').hidden=true; $('scene').classList.toggle('embed-mode',imported);
+ if(shell.hidden)return;
  if(!googleActive || !googleReady){$('googleMap').hidden=true;$('leafletMap').hidden=false;updateLeafletMap(round,target);return}
  $('leafletMap').hidden=true;$('googleMap').hidden=false;
  const g=window.google.maps;
@@ -88,66 +87,31 @@ function normalizePanoramaId(value){
  }
  return id;
 }
-function hideEmbed(){embedActive=false;lastEmbedScene='';$('embedStreetview').hidden=true;$('embedStreetview').removeAttribute('src')}
 function updateEmbedStreetView(round){
  const panoId=normalizePanoramaId(round.panoId || round.panorama?.panoId || round.panorama?.pano);
- const sceneKey=JSON.stringify([gameIndex,roundIndex,imported,panoId,round.heading,round.pitch]);
+ const sceneKey=JSON.stringify([gameIndex,roundIndex,imported,panoId,round.heading,round.pitch,embedKey]);
  if(sceneKey===lastEmbedScene)return;lastEmbedScene=sceneKey;
  const frame=$('embedStreetview'),notice=$('sceneNotice');
  frame.hidden=true;frame.removeAttribute('src');$('streetview').hidden=true;
  if(!imported){notice.hidden=true;document.querySelector('.view-badge').textContent='◉   DEMONSTRAÇÃO';return}
+ if(!embedKey){notice.textContent='Street View não configurado. É necessária uma chave com a Maps Embed API ativada.';notice.hidden=false;return}
  if(!panoId){notice.textContent='Esta rodada não possui um ID de panorama. Não é possível garantir a imagem original usando apenas as coordenadas.';notice.hidden=false;document.querySelector('.view-badge').textContent='◉   PANORAMA INDISPONÍVEL';return}
  const query=new URLSearchParams({key:embedKey,pano:panoId});
- if(Number.isFinite(round.heading))query.set('heading',String(Math.max(-180,Math.min(360,round.heading))));
+ if(Number.isFinite(round.heading))query.set('heading',String(((round.heading%360)+360)%360));
  if(Number.isFinite(round.pitch))query.set('pitch',String(Math.max(-90,Math.min(90,round.pitch))));
- // Only pano is sent: adding location would silently fall back to different imagery.
  frame.src='https://www.google.com/maps/embed/v1/streetview?'+query.toString();frame.hidden=false;notice.hidden=true;
- document.querySelector('.view-badge').textContent='◉   STREET VIEW EMBED';
+ document.querySelector('.view-badge').textContent='◉   STREET VIEW';
 }
-function updateStreetView(round){
- if(embedActive){updateEmbedStreetView(round);return}
- const panoId=normalizePanoramaId(round.panoId || round.panorama?.panoId || round.panorama?.pano);
- const movement=data.games[gameIndex].movement;const canShow=googleActive && googleReady && imported && panoId; const key=JSON.stringify([googleActive,googleReady,imported,gameIndex,roundIndex,panoId,round.heading,round.pitch,round.panorama?.zoom,round.image,movement]);
- if(key===lastSceneKey)return;lastSceneKey=key;streetRestrictions=null;const request=++streetViewRequest;
- $('streetview').hidden=true;const notice=$('sceneNotice');notice.hidden=!(imported&&!round.image);notice.textContent=googleActive?'Buscando o panorama desta rodada...':'Ative o Google Maps em Mapa para visualizar o Street View desta rodada.';document.querySelector('.view-badge').textContent='◉   VISTA DA RODADA';
- if(!canShow){if(imported && googleActive && !panoId){notice.hidden=false;notice.textContent='Este round não possui um ID de panorama. Não é possível garantir a imagem original usando apenas coordenadas.'}return;}
- const g=window.google.maps;streetViewService ||= new g.StreetViewService();
- document.querySelector('.view-badge').textContent='◉   BUSCANDO STREET VIEW';
- const query={pano:panoId};
- streetViewService.getPanorama(query,(result,status)=>{
-  if(request!==streetViewRequest)return;
-  if(status!==g.StreetViewStatus.OK || !result?.location?.pano){notice.hidden=false;notice.textContent='Não foi encontrado um panorama disponível para esta rodada.';document.querySelector('.view-badge').textContent='◉   STREET VIEW INDISPONÍVEL';return}
-  if(!streetView){
-   streetView=new g.StreetViewPanorama($('streetview'),{addressControl:false,showRoadLabels:false,fullscreenControl:false,enableCloseButton:false});
-   streetView.addListener('pov_changed',()=>{const c=streetRestrictions;if(!c?.forbidRotating||restoringView)return;const p=streetView.getPov();if(Math.abs(p.heading-c.pov.heading)>0.01||Math.abs(p.pitch-c.pov.pitch)>0.01){restoringView=true;streetView.setPov(c.pov);restoringView=false}});
-   streetView.addListener('zoom_changed',()=>{const c=streetRestrictions;if(c?.forbidZooming&&!restoringView&&streetView.getZoom()!==c.zoom){restoringView=true;streetView.setZoom(c.zoom);restoringView=false}});
-   streetView.addListener('pano_changed',()=>{const c=streetRestrictions;if(c?.forbidMoving&&!restoringView&&streetView.getPano()!==c.pano){restoringView=true;streetView.setPano(c.pano);restoringView=false}});
-  }
-  const noMove=movement?.forbidMoving===true,noPan=movement?.forbidRotating===true,noZoom=movement?.forbidZooming===true;
-  streetView.setOptions({linksControl:!noMove,clickToGo:!noMove,scrollwheel:!noZoom,disableDoubleClickZoom:noZoom,zoomControl:!noZoom,panControl:!noPan,motionTracking:false,motionTrackingControl:false});
-  const pov={heading:Number.isFinite(round.heading)?round.heading:(Number.isFinite(round.panorama?.heading)?round.panorama.heading:0),pitch:Number.isFinite(round.pitch)?round.pitch:(Number.isFinite(round.panorama?.pitch)?round.panorama.pitch:0)};const zoom=Number.isFinite(round.panorama?.zoom)?Math.max(0,round.panorama.zoom):0;
-  streetView.setPano(result.location.pano);streetView.setPov(pov);streetView.setZoom(zoom);streetRestrictions={forbidMoving:noMove,forbidRotating:noPan,forbidZooming:noZoom,pano:result.location.pano,pov,zoom};
-  notice.hidden=true;$('streetview').hidden=false;g.event.trigger(streetView,'resize');document.querySelector('.view-badge').textContent='◉   PANORAMA DA RODADA';
- });
-}
-function useOpenStreetMap(message='Mapa atual: OpenStreetMap.'){
- hideEmbed();googleActive=false;lastSceneKey='';$('mapsStatus').textContent=message;render();
-}
+function updateStreetView(round){updateEmbedStreetView(round)}
 function showMapError(message){const banner=$('mapErrorBanner');banner.textContent=message;banner.hidden=false}
-window.gm_authFailure=()=>{googleAuthFailed=true;googleReady=false;$('enableGoogle').disabled=false;const message='Não foi possível autorizar o Google Maps. Confira se a Maps JavaScript API está ativa, o faturamento e a restrição do domínio no Google Cloud.';showMapError(message);useOpenStreetMap(message)};
-$('enableEmbed').onclick=()=>{const value=$('embedKey').value.trim();if(!value){$('mapsStatus').textContent='Informe uma chave com a Maps Embed API ativada.';return}embedKey=value;$('embedKey').value='';embedActive=true;googleActive=false;streetViewRequest++;lastEmbedScene='';if(map){map.remove();map=null;mapLayer=null}document.querySelector('.map-kicker').textContent='MAPA INDISPONÍVEL';$('mapsStatus').textContent='Street View Embed selecionado. O carregamento depende da chave e do panorama.';$('mapsDialog').close();render()};
-$('closeMaps').onclick=()=>$('mapsDialog').close();$('useOsm').onclick=()=>{useOpenStreetMap();$('mapsDialog').close()};
-function enableGoogleMaps(configuredKey){
- const key=configuredKey||$('mapsKey').value.trim()||googleKeyUsed;if(!key){$('mapsStatus').textContent='Informe uma chave da Maps JavaScript API.';return}
- if(googleKeyUsed && key!==googleKeyUsed){$('mapsStatus').textContent='Para usar outra chave, recarregue esta página e tente novamente.';return}
- if(googleReady){hideEmbed();googleActive=true;googleMap=null;lastSceneKey='';$('mapsStatus').textContent='Google Maps ativado.';$('mapsDialog').close();render();return}
- if(googleKeyUsed){$('mapsStatus').textContent='Recarregue a página para tentar novamente.';return}
- googleKeyUsed=key;$('mapsStatus').textContent='Carregando Google Maps...';$('enableGoogle').disabled=true;
+window.gm_authFailure=()=>{googleAuthFailed=true;googleReady=false;googleActive=false;showMapError('Não foi possível autorizar o minimapa do Google. Confira a Maps JavaScript API e as restrições da chave.');render()};
+function enableGoogleMaps(key){
+ if(!key)return;
+ googleKeyUsed=key;
  const sdk=document.createElement('script');sdk.async=true;sdk.src='https://maps.googleapis.com/maps/api/js?key='+encodeURIComponent(key)+'&loading=async&callback=eloguessrMapsReady';
- window.eloguessrMapsReady=()=>{if(googleAuthFailed)return;hideEmbed();googleReady=true;googleActive=true;$('enableGoogle').disabled=false;$('mapsKey').value='';$('mapsStatus').textContent='Google Maps carregado; a autorização é verificada pelo Google.';$('mapErrorBanner').hidden=true;if($('mapsDialog').open)$('mapsDialog').close();lastSceneKey='';render()};
- sdk.onerror=()=>{$('enableGoogle').disabled=false;const message='Não foi possível carregar o Google Maps. Verifique a conexão e recarregue a página para tentar novamente.';showMapError(message);useOpenStreetMap(message)};document.head.append(sdk);
+ window.eloguessrMapsReady=()=>{if(googleAuthFailed)return;googleReady=true;googleActive=true;$('mapErrorBanner').hidden=true;render()};
+ sdk.onerror=()=>{showMapError('Não foi possível carregar o minimapa do Google. Verifique a conexão e recarregue a página.');render()};document.head.append(sdk);
 }
-$('enableGoogle').onclick=()=>enableGoogleMaps();
 $('prevRound').onclick=()=>{roundIndex=(roundIndex-1+data.games[gameIndex].rounds.length)%data.games[gameIndex].rounds.length;render()};$('nextRound').onclick=()=>{roundIndex=(roundIndex+1)%data.games[gameIndex].rounds.length;render()};$('expandMap').onclick=()=>{document.querySelector('.map-shell').classList.toggle('expanded');setTimeout(()=>{if(googleActive && googleMap){google.maps.event.trigger(googleMap,'resize');updateMap(data.games[gameIndex].rounds[roundIndex],data.games[gameIndex].target)}else if(map)map.invalidateSize()},220)};
 $('profilesButton').onclick=()=>{$('profileDialog').showModal();requestBridgeReady()};$('closeProfiles').onclick=()=>{cancelBridge();$('profileDialog').close()};$('saveProfiles').onclick=()=>{cancelBridge();$('profileDialog').close()};
 $('restartButton').onclick=()=>{answers={};revealed=false;gameIndex=0;roundIndex=0;render()};$('submitButton').onclick=()=>{if(Object.keys(answers).length!==data.games.length || new Set(Object.values(answers)).size!==data.games.length)return;revealed=true;let score=0;$('resultList').replaceChildren();data.games.forEach((g,i)=>{const correct=data.profiles.find(p=>p.id===g.playerId),chosen=data.profiles.find(p=>p.id===answers[i]);const ok=correct.id===chosen.id;if(ok)score++;const row=make('div','result-row'+(ok?'':' result-row-wrong'));const desc=make('div');desc.append(make('small','',`JOGO ${String(i+1).padStart(2,'0')} · VOCÊ ESCOLHEU ${chosen.name.toUpperCase()}`),make('strong','',`Jogador correto: ${correct.name}`));const actions=make('div','result-actions');if(typeof g.gameId==='string' && /^[a-z0-9-]{8,100}$/i.test(g.gameId)){const link=make('a','result-link','Ver partida ↗');link.href='https://www.geoguessr.com/duels/'+encodeURIComponent(g.gameId)+'/summary';link.target='_blank';link.rel='noopener noreferrer';link.setAttribute('aria-label',`Ver partida ${i+1} no GeoGuessr (abre em nova aba)`);actions.append(link)}actions.append(make('span','status'+(ok?'':' wrong'),ok?'✓':'×'));row.append(desc,actions);$('resultList').append(row)});$('score').innerHTML=score+'<span>/'+data.games.length+'</span>';$('scoreMessage').textContent=score===data.games.length?'Você acertou todos os jogadores!':'Cada palpite conta uma história.';render();$('resultDialog').showModal()};$('closeResults').onclick=()=>$('resultDialog').close();$('playAgain').onclick=()=>{$('resultDialog').close();answers={};revealed=false;gameIndex=0;roundIndex=0;render()};
@@ -163,7 +127,6 @@ function requestBridgeReady(){bridgeReady=false;window.postMessage({channel:BRID
 function bridgeReset(){if(bridgeTimer)clearTimeout(bridgeTimer);bridgeTimer=null;bridgePending=null;$('generateGames').disabled=false}
 function cancelBridge(){if(bridgePending?.sent)window.postMessage({channel:BRIDGE_CHANNEL,type:'cancel',id:bridgePending.id},location.origin);bridgeReset()}
 function activateData(dataset){
- stopReplay();
  data=validate(dataset);imported=true;lastSceneKey='';lastEmbedScene='';healthScene='';answers={};revealed=false;gameIndex=roundIndex=0;
  document.querySelector('.demo-badge').innerHTML='<i></i> PARTIDAS IMPORTADAS';document.querySelector('footer span:last-child').textContent='Dados de partidas importadas';
  $('profileDialog').close();render();
@@ -179,7 +142,6 @@ function startBridgeRequest(){
 window.addEventListener('message',event=>{
  if(event.origin!==location.origin||!event.data||event.data.channel!==BRIDGE_CHANNEL)return;
  const msg=event.data;
- if(msg.type==='replay-result'||msg.type==='replay-error'){handleReplayMessage(msg);return}
  if(msg.type==='ready'){const [major=0,minor=0,patch=0]=String(msg.version||'').split('.').map(Number);bridgeReady=major>0||minor>=10;startBridgeRequest();return}
  if(!bridgePending||msg.id!==bridgePending.id)return;
  if(msg.type==='started'){bridgePending.started=true;$('profileMessage').textContent='Conectado ao GeoGuessr. Buscando jogos...';bridgeTimeout('A coleta demorou demais. Verifique sua conexão e tente novamente.',120000)}
@@ -202,71 +164,7 @@ $('generateGames').onclick=()=>{
 };
 
 
-// Reprodução local dos eventos reais, sem exibir as identidades dos jogadores.
-let replay = {open:false, key:'', id:'', side:'A', events:[], duration:0, position:0, playing:false, frame:0, lastTick:0, speed:1, timeline:null, marker:null, mapVisible:false};
-const replayCache=new Map();
-function replayKey(){return gameIndex+':'+roundIndex}
-function replayClock(ms){const sec=Math.floor(Math.max(0,ms)/1000);return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0')}
-let replayRequestTimer=null;
-function replayStopFrame(){if(replay.frame)cancelAnimationFrame(replay.frame);replay.frame=0;replay.playing=false;replay.lastTick=0;$('replayPlay').textContent='▶'}
-function stopReplay(){
- replayStopFrame();if(replayRequestTimer)clearTimeout(replayRequestTimer);replayRequestTimer=null;replay.open=false;replay.id='';replay.events=[];replay.marker?.setMap(null);replay.marker=null;
- $('replayUI').hidden=true;document.querySelector('.scene').classList.remove('replaying','replay-map-visible');
-}
-function syncReplayContext(){
- const game=data.games[gameIndex];$('replayOpen').hidden=!imported || !game.gameId || !game.replayPlayers;
- if(replay.open && replay.key!==replayKey())stopReplay();
- if(replay.open && replay.events.length){streetRestrictions=null;googleMarkers.forEach(m=>m.setMap(null));googleLines.forEach(l=>l.setMap(null));googleMarkers=[];googleLines=[];renderReplay(replay.position,true)}
-}
-function selectReplay(side){
- replayStopFrame();if(replayRequestTimer)clearTimeout(replayRequestTimer);replayRequestTimer=null;replay.marker?.setMap(null);replay.side=side;replay.events=[];replay.position=0;replay.duration=0;replay.id=crypto.randomUUID();
- $('replayA').classList.toggle('active',side==='A');$('replayB').classList.toggle('active',side==='B');
- $('replaySeek').value=0;$('replayTime').textContent='0:00 / 0:00';$('replayStatus').textContent='Carregando replay...';
- const game=data.games[gameIndex],round=game.rounds[roundIndex],playerId=game.replayPlayers?.[side],roundNumber=round.roundNumber;
- if(!googleActive||!streetView){$('replayStatus').textContent='Aguarde o Street View carregar.';return}
- if(!Number.isInteger(roundNumber)||!playerId){$('replayStatus').textContent='Dados do replay indisponíveis. Gere as partidas novamente.';return}
- const key=game.gameId+':'+playerId+':'+roundNumber;
- if(replayCache.has(key)){receiveReplay(replayCache.get(key));return}
- replay.cacheKey=key;
- const requestedId=replay.id;window.postMessage({channel:BRIDGE_CHANNEL,type:'replay',id:requestedId,gameId:game.gameId,playerId,round:roundNumber},location.origin);
- replayRequestTimer=setTimeout(()=>{if(replay.open&&replay.id===requestedId){replay.id='';$('replayStatus').textContent='O coletor não respondeu. Confira a atualização e tente novamente.'}},30000);
-}
-function handleReplayMessage(msg){
- if(!replay.open||msg.id!==replay.id)return;
- if(replayRequestTimer)clearTimeout(replayRequestTimer);replayRequestTimer=null;
- if(msg.type==='replay-error'){$('replayStatus').textContent=msg.message||'Replay indisponível.';return}
- if(!Array.isArray(msg.events)||!msg.events.length){$('replayStatus').textContent='Replay indisponível para esta rodada.';return}
- replayCache.set(replay.cacheKey,msg.events);receiveReplay(msg.events);
-}
-function receiveReplay(events){
- replay.events=events.filter(e=>e&&Number.isFinite(e.time)&&e.payload&&typeof e.payload==='object').sort((a,b)=>a.time-b.time);
- if(!replay.events.length){$('replayStatus').textContent='Replay indisponível para esta rodada.';return}
- replay.duration=Math.max(0,replay.events.at(-1).time-replay.events[0].time);replay.position=0;replay.timeline=new ReplayTimeline(replay.events);
- $('replayStatus').textContent='';streetRestrictions=null;
- googleMarkers.forEach(m=>m.setMap(null));googleLines.forEach(l=>l.setMap(null));googleMarkers=[];googleLines=[];
- renderReplay(0,true);startReplay();
-}
-function renderReplay(ms,force=false){
- if(!replay.timeline||!streetView||!googleMap)return;
- const {state,changed}=replay.timeline.seek(ms);const has=key=>force||changed.has(key);
- if(has('pano')&&state.pano){const pano=normalizePanoramaId(state.pano);if(streetView.getPano()!==pano)streetView.setPano(pano)}
- if(has('pov')&&state.pov)streetView.setPov(state.pov);
- if(has('panoZoom')&&state.panoZoom!==null)streetView.setZoom(state.panoZoom);
- if(has('mapPos'))googleMap.setCenter(state.mapPos||{lat:0,lng:0});
- if(has('mapZoom'))googleMap.setZoom(state.mapZoom!==null?Math.max(0,Math.min(21,state.mapZoom)):2);
- if(has('pin')){if(state.pin){if(!replay.marker)replay.marker=new google.maps.Marker({map:googleMap,position:state.pin});else{replay.marker.setMap(googleMap);replay.marker.setPosition(state.pin)}}else if(replay.marker)replay.marker.setMap(null)}
- if(has('visible')){document.querySelector('.scene').classList.toggle('replay-map-visible',state.visible);if(replay.mapVisible!==state.visible){replay.mapVisible=state.visible;google.maps.event.trigger(googleMap,'resize')}}
- $('replaySeek').value=replay.duration?Math.round(ms/replay.duration*1000):0;$('replayTime').textContent=replayClock(ms)+' / '+replayClock(replay.duration);
-}
-function startReplay(){if(!replay.events.length)return;if(replay.position>=replay.duration)replay.position=0;replay.playing=true;replay.lastTick=0;$('replayPlay').textContent='❚❚';replay.frame=requestAnimationFrame(replayTick)}
-function replayTick(now){if(!replay.playing||!replay.open)return;if(replay.lastTick)replay.position=Math.min(replay.duration,replay.position+(now-replay.lastTick)*replay.speed);replay.lastTick=now;renderReplay(replay.position);if(replay.position>=replay.duration){replayStopFrame();return}replay.frame=requestAnimationFrame(replayTick)}
-$('replayOpen').onclick=()=>{replay.open=true;replay.key=replayKey();replay.mapVisible=false;$('replayUI').hidden=false;document.querySelector('.scene').classList.add('replaying');selectReplay('A')};
-$('replayClose').onclick=()=>{stopReplay();lastSceneKey='';render()};
-$('replayA').onclick=()=>selectReplay('A');$('replayB').onclick=()=>selectReplay('B');
-$('replayPlay').onclick=()=>replay.playing?replayStopFrame():startReplay();
-$('replaySpeed').onchange=e=>{replay.speed=Number(e.target.value)||1;replay.lastTick=0};
-$('replaySeek').oninput=e=>{replayStopFrame();replay.position=replay.duration*Number(e.target.value)/1000;renderReplay(replay.position)};
-
+embedKey=typeof window.ELOGUESSR_CONFIG?.googleMapsApiKey==='string' ? window.ELOGUESSR_CONFIG.googleMapsApiKey.trim() : '';
 render();
-if(typeof window.ELOGUESSR_CONFIG?.googleMapsApiKey==='string' && window.ELOGUESSR_CONFIG.googleMapsApiKey.trim())enableGoogleMaps(window.ELOGUESSR_CONFIG.googleMapsApiKey.trim());
-else showMapError('Google Maps não está configurado neste ambiente. O mapa alternativo está ativo.');
+if(embedKey)enableGoogleMaps(embedKey);
+else showMapError('Google Maps não está configurado neste ambiente.');
