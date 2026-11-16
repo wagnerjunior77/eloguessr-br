@@ -1,0 +1,22 @@
+{
+  "profiles": [
+    { "id": "jogador-1", "name": "Jogador 1", "url": "https://www.geoguessr.com/user/ID1" },
+    { "id": "jogador-2", "name": "Jogador 2", "url": "https://www.geoguessr.com/user/ID2" }
+  ],
+  "games": [
+    {
+      "playerId": "jogador-1",
+      "target": "A",
+      "rounds": [
+        { "caption": "Round 1", "image": "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1800&q=85", "location": { "lat": -15.8, "lng": -47.9 }, "guesses": { "A": { "lat": -16.0, "lng": -48.0 }, "B": { "lat": -23.5, "lng": -46.6 } } }
+      ]
+    },
+    {
+      "playerId": "jogador-2",
+      "target": "B",
+      "rounds": [
+        { "caption": "Round 1", "image": "https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=1800&q=85", "location": { "lat": 48.8, "lng": 2.3 }, "guesses": { "A": { "lat": 51.5, "lng": -0.1 }, "B": { "lat": 48.9, "lng": 2.4 } } }
+      ]
+    }
+  ]
+}
