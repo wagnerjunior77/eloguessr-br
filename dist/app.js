@@ -19,12 +19,14 @@ let data=structuredClone(demo), gameIndex=0, roundIndex=0, answers={}, revealed=
 let googleReady=false, googleActive=false, googleAuthFailed=false, googleKeyUsed='', googleMap, googleMarkers=[], googleLines=[], streetView, streetViewService, streetViewRequest=0, lastSceneKey='';
 let embedActive=false, embedKey='', lastEmbedScene='';
 let healthScene='',healthAnimation=0;
+let streetRestrictions=null, restoringView=false;
 const $=id=>document.getElementById(id);
 function make(tag,cls,text){const el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=text;return el}
 function render(){
  const game=data.games[gameIndex],round=game.rounds[roundIndex],target=game.target||'A';
  $('gameTabs').replaceChildren();data.games.forEach((g,i)=>{const outcome=revealed?(answers[i]===g.playerId?' correct':' incorrect'):'';const b=make('button','game-tab'+(i===gameIndex?' active':'')+(answers[i]?' answered':'')+outcome);b.setAttribute('role','tab');b.setAttribute('aria-selected',String(i===gameIndex));b.append(document.createTextNode('Jogo '+String(i+1).padStart(2,'0')),make('span','tab-num',revealed?(answers[i]===g.playerId?'✓':'×'):(answers[i]?'✓':'')));b.onclick=()=>{gameIndex=i;roundIndex=0;render()};$('gameTabs').append(b)});
  const done=Object.keys(answers).length;$('progressText').innerHTML=done+' <small>/ '+data.games.length+'</small>';$('progressBar').style.width=(done/data.games.length*100)+'%';$('currentGame').textContent='Jogo '+String(gameIndex+1).padStart(2,'0');$('selectedCount').textContent=(answers[gameIndex]?1:0)+' / 1';$('roundBadge').textContent='ROUND '+String(roundIndex+1).padStart(2,'0');document.querySelector('.round-badge .tiny-label').textContent=imported?'PARTIDA IMPORTADA':'DEMONSTRAÇÃO';$('roundLabel').innerHTML=String(roundIndex+1).padStart(2,'0')+' <i>/</i> '+String(game.rounds.length).padStart(2,'0');$('sceneCaption').textContent=round.caption||'Local da rodada';$('scene').style.backgroundImage=round.image?'url("'+round.image.replace(/["\\]/g,'')+'")':'none';
+ $('modeBadge').textContent=!imported?'':!game.movement?'MODO NÃO INFORMADO':game.movement.forbidMoving?(game.movement.forbidRotating&&game.movement.forbidZooming?'NMPZ':'NO MOVE'):'MOVING';$('modeBadge').hidden=!imported;
  document.querySelector('.side-description').replaceChildren(document.createTextNode('Identifique '),make('strong','',`★ Jogador ${target}`),document.createTextNode('.'));document.querySelector('.round-summary strong:last-child').innerHTML='<span class="star">★</span> Jogador '+target;
  $('roundDots').replaceChildren();game.rounds.forEach((_,i)=>{const b=make('button',i===roundIndex?'active':'');b.setAttribute('aria-label','Ir para round '+(i+1));b.onclick=()=>{roundIndex=i;render()};$('roundDots').append(b)});
  $('playerOptions').replaceChildren();data.profiles.forEach(p=>{
@@ -104,8 +106,8 @@ function updateEmbedStreetView(round){
 function updateStreetView(round){
  if(embedActive){updateEmbedStreetView(round);return}
  const panoId=normalizePanoramaId(round.panoId || round.panorama?.panoId || round.panorama?.pano);
- const canShow=googleActive && googleReady && imported && panoId; const key=JSON.stringify([googleActive,googleReady,imported,gameIndex,roundIndex,panoId,round.heading,round.pitch,round.panorama?.zoom,round.image]);
- if(key===lastSceneKey)return;lastSceneKey=key;const request=++streetViewRequest;
+ const movement=data.games[gameIndex].movement;const canShow=googleActive && googleReady && imported && panoId; const key=JSON.stringify([googleActive,googleReady,imported,gameIndex,roundIndex,panoId,round.heading,round.pitch,round.panorama?.zoom,round.image,movement]);
+ if(key===lastSceneKey)return;lastSceneKey=key;streetRestrictions=null;const request=++streetViewRequest;
  $('streetview').hidden=true;const notice=$('sceneNotice');notice.hidden=!(imported&&!round.image);notice.textContent=googleActive?'Buscando o panorama desta rodada...':'Ative o Google Maps em Mapa para visualizar o Street View desta rodada.';document.querySelector('.view-badge').textContent='◉   VISTA DA RODADA';
  if(!canShow){if(imported && googleActive && !panoId){notice.hidden=false;notice.textContent='Este round não possui um ID de panorama. Não é possível garantir a imagem original usando apenas coordenadas.'}return;}
  const g=window.google.maps;streetViewService ||= new g.StreetViewService();
@@ -114,8 +116,17 @@ function updateStreetView(round){
  streetViewService.getPanorama(query,(result,status)=>{
   if(request!==streetViewRequest)return;
   if(status!==g.StreetViewStatus.OK || !result?.location?.pano){notice.hidden=false;notice.textContent='Não foi encontrado um panorama disponível para esta rodada.';document.querySelector('.view-badge').textContent='◉   STREET VIEW INDISPONÍVEL';return}
-  streetView ||= new g.StreetViewPanorama($('streetview'),{addressControl:false,showRoadLabels:false,linksControl:true,fullscreenControl:false,enableCloseButton:false});
-  notice.hidden=true;streetView.setPano(result.location.pano);streetView.setPov({heading:Number.isFinite(round.heading)?round.heading:(Number.isFinite(round.panorama?.heading)?round.panorama.heading:0),pitch:Number.isFinite(round.pitch)?round.pitch:(Number.isFinite(round.panorama?.pitch)?round.panorama.pitch:0)});if(Number.isFinite(round.panorama?.zoom))streetView.setZoom(Math.max(0,round.panorama.zoom));$('streetview').hidden=false;g.event.trigger(streetView,'resize');document.querySelector('.view-badge').textContent='◉   PANORAMA DA RODADA';
+  if(!streetView){
+   streetView=new g.StreetViewPanorama($('streetview'),{addressControl:false,showRoadLabels:false,fullscreenControl:false,enableCloseButton:false});
+   streetView.addListener('pov_changed',()=>{const c=streetRestrictions;if(!c?.forbidRotating||restoringView)return;const p=streetView.getPov();if(Math.abs(p.heading-c.pov.heading)>0.01||Math.abs(p.pitch-c.pov.pitch)>0.01){restoringView=true;streetView.setPov(c.pov);restoringView=false}});
+   streetView.addListener('zoom_changed',()=>{const c=streetRestrictions;if(c?.forbidZooming&&!restoringView&&streetView.getZoom()!==c.zoom){restoringView=true;streetView.setZoom(c.zoom);restoringView=false}});
+   streetView.addListener('pano_changed',()=>{const c=streetRestrictions;if(c?.forbidMoving&&!restoringView&&streetView.getPano()!==c.pano){restoringView=true;streetView.setPano(c.pano);restoringView=false}});
+  }
+  const noMove=movement?.forbidMoving===true,noPan=movement?.forbidRotating===true,noZoom=movement?.forbidZooming===true||(noMove&&!noPan);
+  streetView.setOptions({linksControl:!noMove,clickToGo:!noMove,scrollwheel:!noZoom,disableDoubleClickZoom:noZoom,zoomControl:!noZoom,panControl:!noPan,motionTracking:false,motionTrackingControl:false});
+  const pov={heading:Number.isFinite(round.heading)?round.heading:(Number.isFinite(round.panorama?.heading)?round.panorama.heading:0),pitch:Number.isFinite(round.pitch)?round.pitch:(Number.isFinite(round.panorama?.pitch)?round.panorama.pitch:0)};const zoom=Number.isFinite(round.panorama?.zoom)?Math.max(0,round.panorama.zoom):0;
+  streetView.setPano(result.location.pano);streetView.setPov(pov);streetView.setZoom(zoom);streetRestrictions={forbidMoving:noMove,forbidRotating:noPan,forbidZooming:noZoom,pano:result.location.pano,pov,zoom};
+  notice.hidden=true;$('streetview').hidden=false;g.event.trigger(streetView,'resize');document.querySelector('.view-badge').textContent='◉   PANORAMA DA RODADA';
  });
 }
 function useOpenStreetMap(message='Mapa atual: OpenStreetMap.'){
@@ -166,7 +177,7 @@ function startBridgeRequest(){
 window.addEventListener('message',event=>{
  if(event.origin!==location.origin||!event.data||event.data.channel!==BRIDGE_CHANNEL)return;
  const msg=event.data;
- if(msg.type==='ready'){const [major=0,minor=0,patch=0]=String(msg.version||'').split('.').map(Number);bridgeReady=major>0||minor>5||(minor===5&&patch>=1);startBridgeRequest();return}
+ if(msg.type==='ready'){const [major=0,minor=0,patch=0]=String(msg.version||'').split('.').map(Number);bridgeReady=major>0||minor>=6;startBridgeRequest();return}
  if(!bridgePending||msg.id!==bridgePending.id)return;
  if(msg.type==='started'){bridgePending.started=true;$('profileMessage').textContent='Conectado ao GeoGuessr. Buscando jogos...';bridgeTimeout('A coleta demorou demais. Verifique sua conexão e tente novamente.',120000)}
  else if(msg.type==='progress'&&typeof msg.message==='string'){$('profileMessage').textContent=msg.message;bridgeTimeout('A coleta demorou demais. Verifique sua conexão e tente novamente.',120000)}

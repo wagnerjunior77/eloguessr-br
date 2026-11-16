@@ -50,3 +50,5 @@ footer{display:none}#mapErrorBanner:not([hidden]){margin:6px 0!important;padding
 /* Deixa os controles do Street View acessíveis ao lado do minimapa. */
 .map-shell{right:62px}
 @media(max-width:760px){.map-shell{right:52px}.map-shell.expanded{width:calc(100% - 76px)}}
+
+.mode-badge{font-size:9px;letter-spacing:.9px;font-weight:700;padding:9px 10px;background:rgba(12,20,17,.85);border:1px solid rgba(255,255,255,.14);border-radius:6px;color:#f0f5ed}.mode-badge[hidden]{display:none}

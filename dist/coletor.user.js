@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Eloguessr • Coletar duelos
 // @namespace    eloguessr-local
-// @version      0.5.1
+// @version      0.6.0
 // @description  Carrega duelos no Eloguessr usando sua sessão do GeoGuessr.
 // @match        https://www.geoguessr.com/*
 // @match        https://quem-jogou-eloguessr.novelalpaca1.chatgpt.site/*
@@ -127,7 +127,10 @@ O menu anterior para baixar JSON continua disponível no GeoGuessr.
       rounds.push(r);
     }
     if (!rounds.length) return null;
-    return { key: gameId, playerId, target: side === 0 ? 'A' : 'B', rounds };
+    const rawMovement = duel.movementOptions || duel.options?.movementOptions;
+    const movement = rawMovement && ['forbidMoving','forbidRotating','forbidZooming'].every(k => typeof rawMovement[k] === 'boolean')
+      ? { forbidMoving: rawMovement.forbidMoving, forbidRotating: rawMovement.forbidRotating, forbidZooming: rawMovement.forbidZooming } : null;
+    return { key: gameId, playerId, target: side === 0 ? 'A' : 'B', rounds, movement };
   }
   function assignDistinct(profiles, candidates) {
     const assigned = new Map();
@@ -196,7 +199,7 @@ O menu anterior para baixar JSON continua disponível no GeoGuessr.
     window.addEventListener('message', event => {
       if (event.origin !== SITE_ORIGIN || !event.data || event.data.channel !== CHANNEL) return;
       const message = event.data;
-      if (message.type === 'ping') { reply({ type: 'ready', version: '0.5.1' }); return; }
+      if (message.type === 'ping') { reply({ type: 'ready', version: '0.6.0' }); return; }
       if (message.type === 'cancel') { if (active.has(message.id)) active.get(message.id).cancelled = true; return; }
       if (message.type !== 'collect' || !validId(message.id) || !Array.isArray(message.links) || active.has(message.id)) return;
       if (message.links.length < 1 || message.links.length > MAX_PROFILES || message.links.some(link => !getId(link))) {
@@ -211,7 +214,7 @@ O menu anterior para baixar JSON continua disponível no GeoGuessr.
         .finally(() => active.delete(message.id));
     });
     window.addEventListener('pagehide', () => { for (const state of active.values()) state.cancelled = true; });
-    reply({ type: 'ready', version: '0.5.1' });
+    reply({ type: 'ready', version: '0.6.0' });
     return;
   }
   if (location.origin !== 'https://www.geoguessr.com') return;

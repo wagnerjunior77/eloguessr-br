@@ -16,7 +16,7 @@ function setup(authenticated = true, geoCount = 2) {
   const values = new Map(), subscriptions = new Map(), listeners = new Map(), locks = new Set(), messages = [], calls = [];
   let nextListener = 1;
   const fixture = {
-    gameId, status:'Finished', currentRoundNumber:2, result:{isDraw:false}, initialHealth:6000,
+    gameId, status:'Finished', currentRoundNumber:2, result:{isDraw:false}, initialHealth:6000, movementOptions:{forbidMoving:true,forbidRotating:true,forbidZooming:true},
     teams:[
       {players:[{playerId:opponent,guesses:[{roundNumber:1,lat:1,lng:1},{roundNumber:2,lat:2,lng:2}]}],roundResults:[{roundNumber:2,healthBefore:5000,healthAfter:5500}]},
       {players:[{playerId:player,guesses:[{roundNumber:2,lat:3,lng:3}]}],roundResults:[{roundNumber:2,healthBefore:6000,healthAfter:4000}]}
@@ -86,7 +86,7 @@ test('carrega duelo, HP e panorama sem outra aba ou JSON', async()=>{
   h.site.win.postMessage({channel,type:'collect',id:'12345678-aaaa-bbbb-cccc-123456789012',links:[geoOrigin+'/user/'+player]},siteOrigin);
   const reply=await waitFor(()=>h.messages.find(m=>m.type==='result'));
   assert.equal(reply.data.profiles.length,1);assert.equal(reply.data.profiles[0].id,player);assert.equal(reply.data.games.length,1);
-  const game=reply.data.games[0];assert.equal(game.gameId,gameId);assert.equal(game.target,'B');assert.equal(game.rounds.length,1);assert.equal(game.rounds[0].caption,'Round 2');assert.equal(game.rounds[0].panoId,'second');
+  const game=reply.data.games[0];assert.equal(game.gameId,gameId);assert.equal(game.movement.forbidRotating,true);assert.equal(game.movement.forbidMoving,true);assert.equal(game.movement.forbidZooming,true);assert.equal(game.target,'B');assert.equal(game.rounds.length,1);assert.equal(game.rounds[0].caption,'Round 2');assert.equal(game.rounds[0].panoId,'second');
   assert.equal(game.rounds[0].health.A.after,5500);assert.equal(game.rounds[0].health.B.after,4000);
   assert.equal(h.calls.length,3,'a mesma solicitação não deve ser processada duas vezes');
   assert.ok(h.calls.every(call=>call.options.credentials==='include'));
