@@ -32,7 +32,7 @@ function render(){
   const used=Object.entries(answers).find(([index,id])=>Number(index)!==gameIndex && id===p.id);
   const b=make('button','player-option'+(selected?' selected':'')+(used?' unavailable':''));
   b.setAttribute('aria-pressed',String(selected));b.disabled=Boolean(used);
-  const av=make('span','avatar',p.name.trim().slice(0,2).toUpperCase());if(/^[a-f0-9]{24}$/i.test(p.id)){const img=make('img');img.alt='';img.loading='lazy';img.onload=()=>{av.replaceChildren(img)};img.src='/avatar/'+encodeURIComponent(p.id)}const info=make('span','option-text');info.append(make('strong','',p.name));
+  const av=make('span','avatar',p.name.trim().slice(0,2).toUpperCase());if(/^[a-f0-9]{24}$/i.test(p.id)){const img=make('img');img.alt='';img.onload=()=>{av.replaceChildren(img)};img.src='/avatar/'+encodeURIComponent(p.id)}const info=make('span','option-text');info.append(make('strong','',p.name));
   if(used){const label='Escolhido no Jogo '+String(Number(used[0])+1).padStart(2,'0');info.append(make('small','',label));b.title=label+'. Remova a seleção naquele jogo para usar este jogador.'}
   b.append(av,info,make('span','radio'));b.onclick=()=>{if(selected)delete answers[gameIndex];else answers[gameIndex]=p.id;render()};$('playerOptions').append(b)
  });
