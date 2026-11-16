@@ -37,6 +37,7 @@
   </main>
   <dialog id="profileDialog"><div class="dialog-top"><div><span class="eyebrow small">PREPARE A PARTIDA</span><h2>Adicionar perfis</h2></div><button class="close-dialog" id="closeProfiles" aria-label="Fechar">×</button></div>
     <p>Cole um link de perfil por linha.</p><label for="profileLinks">LINKS DOS PERFIS</label><textarea id="profileLinks" rows="5" placeholder="https://www.geoguessr.com/user/..."></textarea>
+    <label for="modeFilter" class="mode-filter-label">MODO DE JOGO</label><select id="modeFilter"><option value="any">Qualquer modo</option><option value="moving">Moving</option><option value="no_move">No Move</option><option value="nmpz">NMPZ</option></select>
     <button class="button primary" id="generateGames" type="button">Gerar jogos <span>→</span></button>
     <p class="bridge-hint">Esteja conectado ao GeoGuessr neste navegador. É necessário <a href="coletor.user.js" target="_blank" rel="noopener">instalar ou atualizar o coletor</a>.</p>
     <p class="dialog-foot bridge-status" id="profileMessage" role="status" aria-live="polite"></p>

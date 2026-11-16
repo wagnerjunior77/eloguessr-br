@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Eloguessr • Coletar duelos
 // @namespace    eloguessr-local
-// @version      0.6.0
+// @version      0.7.0
 // @description  Carrega duelos no Eloguessr usando sua sessão do GeoGuessr.
 // @match        https://www.geoguessr.com/*
 // @match        https://quem-jogou-eloguessr.novelalpaca1.chatgpt.site/*
@@ -150,7 +150,8 @@ O menu anterior para baixar JSON continua disponível no GeoGuessr.
       const { key, ...game } = x.game; return { ...game, gameId: key };
     })) };
   }
-  async function collectProfiles(links, progress = () => {}, isCancelled = () => false) {
+  async function collectProfiles(links, progress = () => {}, isCancelled = () => false, mode = 'any') {
+    if (!['any','moving','no_move','nmpz'].includes(mode)) throw new Error('Modo de jogo inválido.');
     if (!Array.isArray(links)) throw new Error('Informe os links dos perfis.');
     const cleanLinks = links.map(x => typeof x === 'string' ? x.trim() : '').filter(Boolean);
     const ids = cleanLinks.map(getId);
@@ -164,7 +165,7 @@ O menu anterior para baixar JSON continua disponível no GeoGuessr.
       if (!user || typeof user.nick !== 'string') throw new Error('O perfil retornado não contém um nome reconhecível.');
       const p = { id, name: user.nick, url: cleanLinks[i] }; profiles.push(p);
       const history = await json('https://www.geoguessr.com/api/v4/game-history/' + encodeURIComponent(id) + '/game-ids');
-      const games = shuffle(gameIds(history)).slice(0, MAX_DUELS_PER_PROFILE), usable = [];
+      const games = shuffle(gameIds(history)).slice(0, mode === 'any' ? MAX_DUELS_PER_PROFILE : 30), usable = [];
       for (let n = 0; n < games.length; n++) {
         if (isCancelled()) throw new Error('Coleta cancelada.');
         progress(`Analisando ${p.name}: duelo ${n + 1} de ${games.length}...`);
@@ -176,13 +177,17 @@ O menu anterior para baixar JSON continua disponível no GeoGuessr.
         }
         if (!cache.get(gameId)) continue;
         const game = extract(cache.get(gameId), id, gameId);
-        if (game) usable.push(game);
+        if (game) {
+          const m = game.movement;
+          const match = mode === 'any' || (m && (mode === 'moving' ? !m.forbidMoving && !m.forbidRotating && !m.forbidZooming : mode === 'no_move' ? m.forbidMoving && !m.forbidRotating && !m.forbidZooming : m.forbidMoving && m.forbidRotating && m.forbidZooming));
+          if (match) usable.push(game);
+        }
       }
       candidates.set(id, usable);
     }
     if (isCancelled()) throw new Error('Coleta cancelada.');
     const chosen = assignDistinct(profiles, candidates);
-    if (chosen.missing.length) throw new Error('Não foi possível obter um duelo solo distinto com palpites dos dois jogadores para: ' + chosen.missing.map(p => p.name).join(', ') + '. O histórico pode estar vazio, inacessível ou conter partidas sem dados completos.');
+    if (chosen.missing.length) throw new Error('Não foi possível encontrar um duelo solo distinto' + (mode !== 'any' ? ' no modo escolhido entre até 30 partidas analisadas por perfil' : '') + ' para: ' + chosen.missing.map(p => p.name).join(', ') + '. Tente outro modo ou outros perfis.');
     return { profiles, games: chosen.games };
   }
 
@@ -199,22 +204,23 @@ O menu anterior para baixar JSON continua disponível no GeoGuessr.
     window.addEventListener('message', event => {
       if (event.origin !== SITE_ORIGIN || !event.data || event.data.channel !== CHANNEL) return;
       const message = event.data;
-      if (message.type === 'ping') { reply({ type: 'ready', version: '0.6.0' }); return; }
+      if (message.type === 'ping') { reply({ type: 'ready', version: '0.7.0' }); return; }
       if (message.type === 'cancel') { if (active.has(message.id)) active.get(message.id).cancelled = true; return; }
       if (message.type !== 'collect' || !validId(message.id) || !Array.isArray(message.links) || active.has(message.id)) return;
       if (message.links.length < 1 || message.links.length > MAX_PROFILES || message.links.some(link => !getId(link))) {
         reply({ type: 'error', id: message.id, message: 'Confira os links dos perfis.' }); return;
       }
+      if (!['any','moving','no_move','nmpz'].includes(message.mode)) { reply({ type: 'error', id: message.id, message: 'Escolha um modo válido.' }); return; }
       const state = { cancelled: false }; active.set(message.id, state);
       const send = (type, extra = {}) => { if (!state.cancelled) reply({ id: message.id, type, ...extra }); };
       send('started');
-      collectProfiles(message.links, progress => send('progress', { message: progress }), () => state.cancelled)
+      collectProfiles(message.links, progress => send('progress', { message: progress }), () => state.cancelled, message.mode)
         .then(data => send('result', { data }))
         .catch(error => send('error', { message: error && error.message || 'Não foi possível coletar as partidas.' }))
         .finally(() => active.delete(message.id));
     });
     window.addEventListener('pagehide', () => { for (const state of active.values()) state.cancelled = true; });
-    reply({ type: 'ready', version: '0.6.0' });
+    reply({ type: 'ready', version: '0.7.0' });
     return;
   }
   if (location.origin !== 'https://www.geoguessr.com') return;

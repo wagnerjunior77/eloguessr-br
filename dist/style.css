@@ -52,3 +52,5 @@ footer{display:none}#mapErrorBanner:not([hidden]){margin:6px 0!important;padding
 @media(max-width:760px){.map-shell{right:52px}.map-shell.expanded{width:calc(100% - 76px)}}
 
 .mode-badge{font-size:9px;letter-spacing:.9px;font-weight:700;padding:9px 10px;background:rgba(12,20,17,.85);border:1px solid rgba(255,255,255,.14);border-radius:6px;color:#f0f5ed}.mode-badge[hidden]{display:none}
+
+#profileDialog .mode-filter-label{margin-top:15px}#modeFilter{width:100%;padding:11px 12px;margin:0 0 15px;color:#f0f5ed;background:#0e1510;border:1px solid #344338;border-radius:6px;font:inherit}#modeFilter:focus{outline:2px solid #a8d964;outline-offset:2px}

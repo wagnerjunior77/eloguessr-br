@@ -122,7 +122,7 @@ function updateStreetView(round){
    streetView.addListener('zoom_changed',()=>{const c=streetRestrictions;if(c?.forbidZooming&&!restoringView&&streetView.getZoom()!==c.zoom){restoringView=true;streetView.setZoom(c.zoom);restoringView=false}});
    streetView.addListener('pano_changed',()=>{const c=streetRestrictions;if(c?.forbidMoving&&!restoringView&&streetView.getPano()!==c.pano){restoringView=true;streetView.setPano(c.pano);restoringView=false}});
   }
-  const noMove=movement?.forbidMoving===true,noPan=movement?.forbidRotating===true,noZoom=movement?.forbidZooming===true||(noMove&&!noPan);
+  const noMove=movement?.forbidMoving===true,noPan=movement?.forbidRotating===true,noZoom=movement?.forbidZooming===true;
   streetView.setOptions({linksControl:!noMove,clickToGo:!noMove,scrollwheel:!noZoom,disableDoubleClickZoom:noZoom,zoomControl:!noZoom,panControl:!noPan,motionTracking:false,motionTrackingControl:false});
   const pov={heading:Number.isFinite(round.heading)?round.heading:(Number.isFinite(round.panorama?.heading)?round.panorama.heading:0),pitch:Number.isFinite(round.pitch)?round.pitch:(Number.isFinite(round.panorama?.pitch)?round.panorama.pitch:0)};const zoom=Number.isFinite(round.panorama?.zoom)?Math.max(0,round.panorama.zoom):0;
   streetView.setPano(result.location.pano);streetView.setPov(pov);streetView.setZoom(zoom);streetRestrictions={forbidMoving:noMove,forbidRotating:noPan,forbidZooming:noZoom,pano:result.location.pano,pov,zoom};
@@ -169,15 +169,15 @@ function activateData(dataset){
 function bridgeTimeout(message,ms){if(bridgeTimer)clearTimeout(bridgeTimer);const id=bridgePending?.id;bridgeTimer=setTimeout(()=>{if(!bridgePending||bridgePending.id!==id)return;cancelBridge();$('profileMessage').textContent=message},ms)}
 function startBridgeRequest(){
  if(!bridgePending||bridgePending.sent||!bridgeReady)return;
- bridgePending.sent=true;const {id,links}=bridgePending;
+ bridgePending.sent=true;const {id,links,mode}=bridgePending;
  $('profileMessage').textContent='Iniciando consulta ao GeoGuessr...';
- window.postMessage({channel:BRIDGE_CHANNEL,type:'collect',id,links},location.origin);
+ window.postMessage({channel:BRIDGE_CHANNEL,type:'collect',id,links,mode},location.origin);
  bridgeTimeout('O coletor não respondeu. Atualize o coletor, recarregue esta página e tente novamente.',15000);
 }
 window.addEventListener('message',event=>{
  if(event.origin!==location.origin||!event.data||event.data.channel!==BRIDGE_CHANNEL)return;
  const msg=event.data;
- if(msg.type==='ready'){const [major=0,minor=0,patch=0]=String(msg.version||'').split('.').map(Number);bridgeReady=major>0||minor>=6;startBridgeRequest();return}
+ if(msg.type==='ready'){const [major=0,minor=0,patch=0]=String(msg.version||'').split('.').map(Number);bridgeReady=major>0||minor>=7;startBridgeRequest();return}
  if(!bridgePending||msg.id!==bridgePending.id)return;
  if(msg.type==='started'){bridgePending.started=true;$('profileMessage').textContent='Conectado ao GeoGuessr. Buscando jogos...';bridgeTimeout('A coleta demorou demais. Verifique sua conexão e tente novamente.',120000)}
  else if(msg.type==='progress'&&typeof msg.message==='string'){$('profileMessage').textContent=msg.message;bridgeTimeout('A coleta demorou demais. Verifique sua conexão e tente novamente.',120000)}
@@ -191,7 +191,7 @@ $('generateGames').onclick=()=>{
  const links=inputs.map((input,i)=>/^[a-z0-9]{24}$/i.test(input)?'https://www.geoguessr.com/user/'+ids[i]:input);
  if(!links.length||links.length>10||ids.some(id=>!id)||new Set(ids).size!==ids.length){$('profileMessage').textContent='Informe de 1 a 10 links válidos e diferentes, um por linha.';return}
  const id=crypto.randomUUID?crypto.randomUUID():Array.from(crypto.getRandomValues(new Uint8Array(16)),v=>v.toString(16).padStart(2,'0')).join('');
- bridgePending={id,links,sent:false,started:false};$('generateGames').disabled=true;$('profileMessage').textContent='Procurando o coletor...';requestBridgeReady();
+ bridgePending={id,links,mode:$('modeFilter').value,sent:false,started:false};$('generateGames').disabled=true;$('profileMessage').textContent='Procurando o coletor...';requestBridgeReady();
  bridgeTimer=setTimeout(()=>{
   if(!bridgePending||bridgePending.id!==id||bridgePending.sent)return;
   bridgeReset();$('profileMessage').textContent='Instale ou atualize o coletor, depois recarregue esta página.';

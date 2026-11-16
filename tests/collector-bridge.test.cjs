@@ -12,11 +12,11 @@ const gameId = '123456789abcdef012345678';
 const player2 = 'cccccccccccccccccccccccc';
 const gameId2 = '123456789abcdef012345679';
 
-function setup(authenticated = true, geoCount = 2) {
+function setup(authenticated = true, geoCount = 2, movement = {forbidMoving:true,forbidRotating:true,forbidZooming:true}) {
   const values = new Map(), subscriptions = new Map(), listeners = new Map(), locks = new Set(), messages = [], calls = [];
   let nextListener = 1;
   const fixture = {
-    gameId, status:'Finished', currentRoundNumber:2, result:{isDraw:false}, initialHealth:6000, movementOptions:{forbidMoving:true,forbidRotating:true,forbidZooming:true},
+    gameId, status:'Finished', currentRoundNumber:2, result:{isDraw:false}, initialHealth:6000, movementOptions:movement,
     teams:[
       {players:[{playerId:opponent,guesses:[{roundNumber:1,lat:1,lng:1},{roundNumber:2,lat:2,lng:2}]}],roundResults:[{roundNumber:2,healthBefore:5000,healthAfter:5500}]},
       {players:[{playerId:player,guesses:[{roundNumber:2,lat:3,lng:3}]}],roundResults:[{roundNumber:2,healthBefore:6000,healthAfter:4000}]}
@@ -83,7 +83,7 @@ async function waitFor(fn) {
 
 test('carrega duelo, HP e panorama sem outra aba ou JSON', async()=>{
   const h=setup(true,0);
-  h.site.win.postMessage({channel,type:'collect',id:'12345678-aaaa-bbbb-cccc-123456789012',links:[geoOrigin+'/user/'+player]},siteOrigin);
+  h.site.win.postMessage({channel,type:'collect',mode:'any',id:'12345678-aaaa-bbbb-cccc-123456789012',links:[geoOrigin+'/user/'+player]},siteOrigin);
   const reply=await waitFor(()=>h.messages.find(m=>m.type==='result'));
   assert.equal(reply.data.profiles.length,1);assert.equal(reply.data.profiles[0].id,player);assert.equal(reply.data.games.length,1);
   const game=reply.data.games[0];assert.equal(game.gameId,gameId);assert.equal(game.movement.forbidRotating,true);assert.equal(game.movement.forbidMoving,true);assert.equal(game.movement.forbidZooming,true);assert.equal(game.target,'B');assert.equal(game.rounds.length,1);assert.equal(game.rounds[0].caption,'Round 2');assert.equal(game.rounds[0].panoId,'second');
@@ -96,7 +96,7 @@ test('carrega duelo, HP e panorama sem outra aba ou JSON', async()=>{
 
 test('sessão ausente produz erro e não retorna jogos', async()=>{
   const h=setup(false);
-  h.site.win.postMessage({channel,type:'collect',id:'99999999-aaaa-bbbb-cccc-123456789012',links:[geoOrigin+'/user/'+player]},siteOrigin);
+  h.site.win.postMessage({channel,type:'collect',mode:'any',id:'99999999-aaaa-bbbb-cccc-123456789012',links:[geoOrigin+'/user/'+player]},siteOrigin);
   const reply=await waitFor(()=>h.messages.find(m=>m.type==='error'));
   assert.match(reply.message,/Acesso negado/);assert.equal(h.messages.some(m=>m.type==='result'),false);
 });
@@ -104,7 +104,7 @@ test('sessão ausente produz erro e não retorna jogos', async()=>{
 
 test('dois perfis geram uma partida distinta para cada um', async()=>{
   const h=setup();
-  h.site.win.postMessage({channel,type:'collect',id:'11111111-aaaa-bbbb-cccc-123456789012',links:[geoOrigin+'/user/'+player,geoOrigin+'/user/'+player2]},siteOrigin);
+  h.site.win.postMessage({channel,type:'collect',mode:'any',id:'11111111-aaaa-bbbb-cccc-123456789012',links:[geoOrigin+'/user/'+player,geoOrigin+'/user/'+player2]},siteOrigin);
   const reply=await waitFor(()=>h.messages.find(m=>m.type==='result'));
   assert.equal(reply.data.profiles.length,2);assert.equal(reply.data.games.length,2);
   assert.deepEqual(new Set(reply.data.games.map(game=>game.playerId)),new Set([player,player2]));
@@ -113,8 +113,32 @@ test('dois perfis geram uma partida distinta para cada um', async()=>{
 
 test('cancelamento impede resultado posterior', async()=>{
   const h=setup(true,0), id='33333333-aaaa-bbbb-cccc-123456789012';
-  h.site.win.postMessage({channel,type:'collect',id,links:[geoOrigin+'/user/'+player]},siteOrigin);
+  h.site.win.postMessage({channel,type:'collect',mode:'any',id,links:[geoOrigin+'/user/'+player]},siteOrigin);
   h.site.win.postMessage({channel,type:'cancel',id},siteOrigin);
   await new Promise(resolve=>setTimeout(resolve,20));
   assert.equal(h.messages.some(m=>m.type==='result'),false);
+});
+
+test('filtro NMPZ aceita duelo NMPZ', async()=>{
+  const h=setup(true,0);
+  h.site.win.postMessage({channel,type:'collect',mode:'nmpz',id:'44444444-aaaa-bbbb-cccc-123456789012',links:[geoOrigin+'/user/'+player]},siteOrigin);
+  const reply=await waitFor(()=>h.messages.find(m=>m.type==='result'));
+  assert.equal(reply.data.games[0].movement.forbidRotating,true);
+});
+test('filtro Moving não aceita duelo NMPZ', async()=>{
+  const h=setup(true,0);
+  h.site.win.postMessage({channel,type:'collect',mode:'moving',id:'55555555-aaaa-bbbb-cccc-123456789012',links:[geoOrigin+'/user/'+player]},siteOrigin);
+  const reply=await waitFor(()=>h.messages.find(m=>m.type==='error'));
+  assert.match(reply.message,/modo escolhido/);
+  assert.equal(h.messages.some(m=>m.type==='result'),false);
+});
+
+for (const [mode,movement] of [
+  ['moving',{forbidMoving:false,forbidRotating:false,forbidZooming:false}],
+  ['no_move',{forbidMoving:true,forbidRotating:false,forbidZooming:false}]
+]) test(`filtro ${mode} seleciona partida compatível`, async()=>{
+  const h=setup(true,0,movement);
+  h.site.win.postMessage({channel,type:'collect',mode,id:'66666666-aaaa-bbbb-cccc-123456789012',links:[geoOrigin+'/user/'+player]},siteOrigin);
+  const reply=await waitFor(()=>h.messages.find(m=>m.type==='result'));
+  assert.deepEqual(JSON.parse(JSON.stringify(reply.data.games[0].movement)),movement);
 });
