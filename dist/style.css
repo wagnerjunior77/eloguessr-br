@@ -46,3 +46,7 @@ footer{display:none}#mapErrorBanner:not([hidden]){margin:6px 0!important;padding
 .game-tab.incorrect .tab-num{color:#f0a29a}.game-tab.correct .tab-num{color:#c6f568}
 .player-options[hidden],.answer-review[hidden]{display:none}.answer-review{display:grid;gap:9px;padding:12px;border:1px solid #42513b;border-radius:7px;background:#1b281b}.answer-review.incorrect{background:#352321;border-color:#81504a}.review-line{display:grid;gap:3px;min-width:0}.review-label{font-size:9px;letter-spacing:.8px;font-weight:700;color:#a9b7a5}.answer-review.incorrect .review-label{color:#d3b5ae}.review-line strong{font-size:12px;overflow-wrap:anywhere;color:#f3f6f0}
 @media(max-width:760px){.viewer-footer{top:10px;bottom:auto;left:50%;transform:translateX(-50%);max-width:calc(100% - 120px)}}
+
+/* Deixa os controles do Street View acessíveis ao lado do minimapa. */
+.map-shell{right:62px}
+@media(max-width:760px){.map-shell{right:52px}.map-shell.expanded{width:calc(100% - 76px)}}
