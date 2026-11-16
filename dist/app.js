@@ -20,14 +20,13 @@ let googleReady=false, googleActive=false, googleAuthFailed=false, googleKeyUsed
 let embedActive=false, embedKey='', lastEmbedScene='';
 let healthScene='',healthAnimation=0;
 let streetRestrictions=null, restoringView=false;
-StreetViewLock.install(document.getElementById('streetview'), () => streetRestrictions);
 const $=id=>document.getElementById(id);
 function make(tag,cls,text){const el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=text;return el}
 function render(){
  const game=data.games[gameIndex],round=game.rounds[roundIndex],target=game.target||'A';
  $('gameTabs').replaceChildren();data.games.forEach((g,i)=>{const outcome=revealed?(answers[i]===g.playerId?' correct':' incorrect'):'';const b=make('button','game-tab'+(i===gameIndex?' active':'')+(answers[i]?' answered':'')+outcome);b.setAttribute('role','tab');b.setAttribute('aria-selected',String(i===gameIndex));b.append(document.createTextNode('Jogo '+String(i+1).padStart(2,'0')),make('span','tab-num',revealed?(answers[i]===g.playerId?'✓':'×'):(answers[i]?'✓':'')));b.onclick=()=>{gameIndex=i;roundIndex=0;render()};$('gameTabs').append(b)});
  const done=Object.keys(answers).length;$('progressText').innerHTML=done+' <small>/ '+data.games.length+'</small>';$('progressBar').style.width=(done/data.games.length*100)+'%';$('currentGame').textContent='Jogo '+String(gameIndex+1).padStart(2,'0');$('selectedCount').textContent=(answers[gameIndex]?1:0)+' / 1';$('roundBadge').textContent='ROUND '+String(roundIndex+1).padStart(2,'0');document.querySelector('.round-badge .tiny-label').textContent=imported?'PARTIDA IMPORTADA':'DEMONSTRAÇÃO';$('roundLabel').innerHTML=String(roundIndex+1).padStart(2,'0')+' <i>/</i> '+String(game.rounds.length).padStart(2,'0');$('sceneCaption').textContent=round.caption||'Local da rodada';$('scene').style.backgroundImage=round.image?'url("'+round.image.replace(/["\\]/g,'')+'")':'none';
- $('modeBadge').textContent=!imported?'':!game.movement?'MODO NÃO INFORMADO':game.movement.forbidMoving?(game.movement.forbidRotating&&game.movement.forbidZooming?'NMPZ':'NO MOVE'):'MOVING';$('modeBadge').hidden=!imported;
+ $('modeBadge').textContent=!imported?'':!game.movement?'MODO NÃO INFORMADO':game.movement.forbidMoving?(game.movement.forbidRotating&&game.movement.forbidZooming?'NMPZ':'NO MOVE'):'MOVING';$('modeBadge').hidden=!imported;$('modeBadge').classList.toggle('nmpz', Boolean(imported&&game.movement?.forbidMoving&&game.movement?.forbidRotating&&game.movement?.forbidZooming));
  document.querySelector('.side-description').replaceChildren(document.createTextNode('Identifique '),make('strong','',`★ Jogador ${target}`),document.createTextNode('.'));document.querySelector('.round-summary strong:last-child').innerHTML='<span class="star">★</span> Jogador '+target;
  $('roundDots').replaceChildren();game.rounds.forEach((_,i)=>{const b=make('button',i===roundIndex?'active':'');b.setAttribute('aria-label','Ir para round '+(i+1));b.onclick=()=>{roundIndex=i;render()};$('roundDots').append(b)});
  $('playerOptions').replaceChildren();data.profiles.forEach(p=>{
