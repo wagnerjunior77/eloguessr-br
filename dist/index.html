@@ -16,7 +16,7 @@
   </header>
   <main>
     <p id="mapErrorBanner" role="alert" hidden style="margin-top:16px;padding:12px;border:1px solid #775745;border-radius:6px;color:#f2d2ba;background:#30231c;line-height:1.5"></p>
-    <section class="intro"><div><div class="eyebrow"><span class="eyebrow-line"></span> O JOGO DE ADIVINHAR JOGADORES</div><h1>Quem fez esse <em>palpite?</em></h1><p>Analise os rounds, siga as pistas e descubra quem está por trás de cada jogo.</p></div><div class="intro-stat"><span>SEU PROGRESSO</span><strong id="progressText">0 <small>/ 3</small></strong><div class="progress-track"><div id="progressBar"></div></div><p>jogos respondidos</p></div></section>
+
     <div class="game-nav"><div class="game-tabs" id="gameTabs" role="tablist" aria-label="Selecionar jogo"></div><div class="nav-caption"><span class="dot"></span> UM JOGO POR JOGADOR</div></div>
     <div class="workspace">
       <section class="viewer" aria-label="Visualização da rodada">
@@ -26,10 +26,10 @@
         </div>
         <div id="embedMapNotice" class="embed-map-notice" role="status" hidden>Neste modo gratuito o minimapa e os palpites A e B não aparecem. Para ver os pins, é necessária a Maps JavaScript API, que possui franquia gratuita e pode gerar cobranças após o limite.</div><div class="viewer-footer"><div class="round-controls"><button class="icon-button" id="prevRound" aria-label="Round anterior">←</button><div class="round-select"><span>RODADA</span><strong id="roundLabel">01 <i>/</i> 05</strong></div><button class="icon-button" id="nextRound" aria-label="Próximo round">→</button><div class="round-dots" id="roundDots"></div></div><div class="viewer-hint"><span>✦</span> A estrela indica o jogador que você precisa identificar</div></div>
       </section>
-      <aside class="sidebar"><div class="panel-top"><div><span class="eyebrow small">SUA INVESTIGAÇÃO</span><h2>Quem jogou?</h2></div><div class="question-icon">?</div></div><p class="side-description">Observe os palpites de <strong>★ Jogador A</strong> e escolha o perfil que você acha que jogou esta partida.</p>
+      <aside class="sidebar"><div class="panel-top"><div><span class="eyebrow small">SUA RESPOSTA</span><h2>Quem jogou?</h2></div><div class="intro-stat"><strong id="progressText">0 <small>/ 3</small></strong><div class="progress-track"><div id="progressBar"></div></div></div></div><p class="side-description">Observe os palpites de <strong>★ Jogador A</strong>.</p>
         <div class="round-summary"><span>PARTIDA ATUAL</span><strong id="currentGame">Jogo 01</strong><div class="divider"></div><span>JOGADOR EM DESTAQUE</span><strong><span class="star">★</span> Jogador A</strong></div>
-        <div class="selection-heading"><span>SELECIONE UM PERFIL</span><span id="selectedCount">0 / 1</span></div><div class="player-options" id="playerOptions"></div>
-        <div class="submit-area"><div class="submit-status" id="submitStatus"><span>◌</span> Responda todos os jogos para revelar</div><button class="button primary" id="submitButton" disabled>Revelar respostas <span>↗</span></button><p>Uma resposta para cada jogo.</p></div>
+        <div class="selection-heading"><span>ESCOLHA UM JOGADOR</span><span id="selectedCount">0 / 1</span></div><div class="player-options" id="playerOptions"></div>
+        <div class="submit-area"><div class="submit-status" id="submitStatus"><span>◌</span> Responda todos os jogos para revelar</div><button class="button primary" id="submitButton" disabled>Revelar respostas <span>↗</span></button><p>Clique no selecionado para remover.</p></div>
       </aside>
     </div>
     <footer><span>✳ &nbsp; FEITO PARA QUEM VÊ O MUNDO DE OUTRO JEITO.</span><span>Dados fictícios para demonstração</span></footer>

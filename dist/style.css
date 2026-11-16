@@ -8,3 +8,22 @@
 .scene-notice{position:absolute;z-index:1;top:32%;left:50%;transform:translate(-50%,-50%);width:min(85%,380px);padding:16px;text-align:center;line-height:1.5;color:#e3eddf;background:#111b17e8;border:1px solid #607463;border-radius:8px;pointer-events:none}.scene-notice[hidden]{display:none}
 
 #embedStreetview{position:absolute;inset:0;width:100%;height:100%;min-width:200px;min-height:200px;border:0;z-index:0}#embedStreetview[hidden],.map-shell[hidden],.embed-map-notice[hidden]{display:none}.embed-map-notice{background:#24301e;color:#d5e9c4;padding:12px 18px;font-size:11px;line-height:1.5;border-top:1px solid #43543b}.scene.embed-mode .compass{display:none}
+
+/* Layout de jogo: panorama ocupa o espaço disponível. */
+.topbar{height:56px;padding:0 14px}
+.brand{font-size:21px}.brand small{display:none}.brand-icon{font-size:21px}
+.top-actions{gap:7px}.top-actions .button{min-height:34px;padding:0 12px}.demo-badge{font-size:9px}
+main{width:100%;max-width:none;padding:0 10px 10px}
+.game-nav{height:49px;margin:0;gap:12px}.game-tabs{height:100%;align-items:stretch}.game-tab{padding:0 16px}.nav-caption{padding-right:4px}
+.workspace{height:calc(100dvh - 115px);min-height:430px;grid-template-columns:minmax(0,1fr) 292px;gap:10px}
+.viewer{position:relative;min-width:0;min-height:0}.scene{height:100%;min-height:0}.scene-shade{background:linear-gradient(180deg,rgba(5,14,11,.2),transparent 20%,transparent 78%,rgba(4,11,8,.32))}
+.viewer-top{top:12px;left:12px;right:12px}.round-badge{padding:8px 11px}.compass,.view-badge,.scene-caption{display:none}
+.map-shell{right:14px;bottom:14px;width:min(310px,38%)}.map-head{height:37px}.map-head strong{font-size:10px}.map-head span{font-size:7px}.map-legend{height:23px;font-size:8px}#map{height:180px}
+.viewer-footer{position:absolute;left:14px;bottom:14px;z-index:3;min-height:0;padding:7px;background:rgba(12,20,17,.88);border:1px solid rgba(255,255,255,.14);border-radius:7px}.viewer-hint{display:none}.round-controls{gap:7px}.round-select{min-width:54px}.round-dots{margin-left:5px}
+.sidebar{padding:19px;min-height:0;overflow:auto}.panel-top{align-items:center}.panel-top h2{font-size:22px;margin-top:5px}.intro-stat{width:56px;flex:none;text-align:right;padding:0}.intro-stat strong{font-size:19px;margin:0 0 6px}.intro-stat strong small{font-size:12px}.side-description{font-size:11px;margin:12px 0}.round-summary{padding:10px;gap:6px}.selection-heading{margin:20px 0 10px}.player-options{gap:7px}.player-option{min-height:54px}.player-option.unavailable{opacity:.43;cursor:not-allowed}.player-option.unavailable:hover{border-color:#303e32}.player-option.unavailable .radio{border-color:#4a574b}.option-text small{font-size:10px}.submit-area{padding-top:18px}.submit-area p{font-size:10px}.submit-status{line-height:1.4}
+footer{display:none}#mapErrorBanner:not([hidden]){margin:6px 0!important;padding:8px 12px!important;font-size:12px}
+@media(max-height:700px) and (min-width:761px){.workspace{min-height:390px}.sidebar{padding:13px}.sidebar .side-description{margin:8px 0}.selection-heading{margin:12px 0 8px}.player-option{min-height:45px;padding:6px 9px}.avatar{width:29px;height:29px}.submit-area{padding-top:12px}.submit-area p{display:none}}
+@media(max-width:760px){.topbar{height:56px;padding:0 10px}.brand{font-size:19px}.top-actions .demo-badge{display:none}.top-actions .button{padding:0 9px;font-size:12px}.game-nav{height:46px}.game-tab{padding:0 12px}.workspace{height:auto;min-height:0;display:flex;flex-direction:column;gap:10px}.viewer{height:clamp(380px,65dvh,620px);flex:none}.scene{height:100%}.map-shell{width:min(260px,52%);bottom:12px;right:12px}.map-shell.expanded{width:calc(100% - 24px)}#map{height:150px}.map-head{height:34px}.map-legend{font-size:7px}.viewer-footer{left:10px;bottom:12px}.round-dots{display:none}.sidebar{padding:18px;overflow:visible}.submit-area{margin-top:0}.selection-heading{margin-top:17px}main{padding:0 8px 16px}}
+@media(max-width:400px){.brand{font-size:17px}.top-actions{gap:4px}.top-actions .button{padding:0 7px}.viewer{height:410px}.map-shell{width:53%}.map-legend{height:auto;min-height:22px}.round-controls{gap:5px}.round-select{min-width:49px}}
+
+.side-description{display:none}.round-summary{margin-top:16px}.round-summary>span:first-child,.round-summary>strong:nth-child(2),.round-summary .divider{display:none}
