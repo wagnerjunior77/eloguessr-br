@@ -8,6 +8,18 @@ export default {
       return new Response('Method not allowed', { status: 405, headers: { Allow: 'GET, HEAD' } });
     }
 
+    const avatarMatch = url.pathname.match(/^\/avatar\/([a-f0-9]{24})$/i);
+    if (avatarMatch) {
+      try {
+        const profile = await fetch('https://www.geoguessr.com/api/v3/users/' + avatarMatch[1], { headers: { Accept: 'application/json' } });
+        if (!profile.ok) return new Response(null, { status: 404 });
+        const user = await profile.json();
+        const image = user.pin?.url || user.customImage;
+        if (typeof image !== 'string' || !/^pin\/[a-z0-9_-]+\.(png|jpe?g|webp)$/i.test(image)) return new Response(null, { status: 404 });
+        return new Response(null, { status: 302, headers: { Location: 'https://www.geoguessr.com/images/resize:fit:96:96/gravity:ce/plain/' + image, 'Cache-Control': 'public, max-age=3600' } });
+      } catch (_) { return new Response(null, { status: 502 }); }
+    }
+
     if (url.pathname === '/config.js') {
       const value = typeof env.GOOGLE_MAPS_API_KEY === 'string' ? env.GOOGLE_MAPS_API_KEY : '';
       // Keep values safe in a JavaScript context even if configuration changes later.
