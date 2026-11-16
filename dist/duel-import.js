@@ -30,8 +30,8 @@
     } catch (_) { return null; }
   }
   function convert(files, profiles) {
-    if (!Array.isArray(profiles) || profiles.length < 2 || profiles.length > 20)
-      throw new Error('Informe entre 2 e 20 perfis.');
+    if (!Array.isArray(profiles) || profiles.length < 1 || profiles.length > 20)
+      throw new Error('Informe entre 1 e 20 perfis.');
     const cleanProfiles = profiles.map(p => {
       const id = parseProfileId(p.id || p.url || '');
       if (!id || typeof p.name !== 'string' || !p.name.trim())

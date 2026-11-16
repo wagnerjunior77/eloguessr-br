@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Eloguessr • Coletar duelos
 // @namespace    eloguessr-local
-// @version      0.1.0
+// @version      0.2.0
 // @description  Exporta partidas disponíveis dos perfis informados para o Eloguessr, usando sua sessão GeoGuessr.
 // @match        https://www.geoguessr.com/*
 // @grant        GM_registerMenuCommand
@@ -11,10 +11,9 @@
 COMO USAR
 1. Instale este script em um gerenciador de userscripts e entre no GeoGuessr.
 2. No menu do gerenciador, escolha "Eloguessr: coletar duelos".
-3. Informe de 2 a 10 links de perfis e clique em Coletar. Importe o JSON baixado no Eloguessr.
+3. Informe de 1 a 10 links de perfis e clique em Coletar. Importe o JSON baixado no Eloguessr.
 O script só consulta o GeoGuessr após o clique. Sua sessão e cookies não são enviados ao Eloguessr.
-A disponibilidade das rotas, os formatos e o acesso a históricos de terceiros ainda precisam ser
-confirmados com uma sessão autenticada; a coleta pode não funcionar para todos os perfis.
+A conta conectada precisa ter acesso ao histórico. A disponibilidade varia por perfil.
 */
 (function () {
   'use strict';
@@ -62,7 +61,7 @@ confirmados com uma sessão autenticada; a coleta pode não funcionar para todos
       .filter(x => typeof x === 'string' && /^[a-z0-9-]{8,100}$/i.test(x)))];
   }
   function extract(duel, playerId, gameId) {
-    if (!duel || !duel.result || !Array.isArray(duel.teams) || duel.teams.length !== 2 ||
+    if (!duel || duel.status !== 'Finished' || !duel.result || !Array.isArray(duel.teams) || duel.teams.length !== 2 ||
         !Array.isArray(duel.rounds)) throw new Error('O formato dos detalhes do duelo não é o esperado.');
     if (duel.teams.some(t => !t || !Array.isArray(t.players)))
       throw new Error('O duelo recebido não contém as equipes esperadas.');
@@ -75,8 +74,12 @@ confirmados com uma sessão autenticada; a coleta pode não funcionar para todos
     if (side < 0) return null;
     const rounds = [];
     for (let i = 0; i < duel.rounds.length; i++) {
-      const rd = duel.rounds[i], a = players[0].guesses[i], b = players[1].guesses[i];
-      if (!rd || !validPoint(a) || !validPoint(b)) continue;
+      const rd = duel.rounds[i];
+      if (!rd || !Number.isInteger(rd.roundNumber) || (Number.isInteger(duel.currentRoundNumber) && rd.roundNumber > duel.currentRoundNumber)) continue;
+      // Um jogador pode não palpitar em um round; não alinhe listas somente por posição.
+      const a = players[0].guesses.find(g => g && g.roundNumber === rd.roundNumber);
+      const b = players[1].guesses.find(g => g && g.roundNumber === rd.roundNumber);
+      if (!validPoint(a) || !validPoint(b)) continue;
       const r = { caption: 'Round ' + (rd.roundNumber || i + 1),
         guesses: { A: point(a), B: point(b) } };
       if (validPoint(rd.panorama)) r.location = point(rd.panorama);
@@ -116,7 +119,7 @@ confirmados com uma sessão autenticada; a coleta pode não funcionar para todos
     back.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:#000b;display:flex;align-items:center;justify-content:center;padding:20px;font-family:Arial,sans-serif;color:#eee';
     const box = document.createElement('div'); box.style.cssText = 'width:min(520px,100%);background:#111b17;border:1px solid #405342;border-radius:12px;padding:24px;box-shadow:0 12px 70px #0008';
     const heading = document.createElement('h2'); heading.textContent = 'Coletar para o Eloguessr'; heading.style.margin = '0 0 12px';
-    const info = document.createElement('p'); info.textContent = 'Cole de 2 a 10 links de perfis, um por linha. A coleta usa sua sessão do GeoGuessr e só começa ao clicar no botão. O acesso aos históricos ainda depende das permissões da sua conta.'; info.style.cssText = 'font-size:14px;line-height:1.5;color:#bdcbbf';
+    const info = document.createElement('p'); info.textContent = 'Cole de 1 a 10 links de perfis, um por linha. A coleta usa sua sessão do GeoGuessr e só começa ao clicar no botão. O acesso aos históricos ainda depende das permissões da sua conta.'; info.style.cssText = 'font-size:14px;line-height:1.5;color:#bdcbbf';
     const input = document.createElement('textarea'); input.placeholder = 'https://www.geoguessr.com/user/...'; input.rows = 6; input.style.cssText = 'box-sizing:border-box;width:100%;padding:12px;background:#09110d;border:1px solid #536658;border-radius:8px;color:white;resize:vertical;font:14px monospace';
     const status = document.createElement('p'); status.style.cssText = 'font-size:13px;line-height:1.5;white-space:pre-wrap;color:#c8dcae'; status.textContent = 'Nenhuma coleta foi iniciada.';
     const buttons = document.createElement('div'); buttons.style.cssText = 'display:flex;gap:10px';
@@ -126,8 +129,8 @@ confirmados com uma sessão autenticada; a coleta pode não funcionar para todos
     collect.onclick = async () => {
       const links = input.value.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
       const ids = links.map(getId);
-      if (ids.length < 2 || ids.length > MAX_PROFILES || ids.some(id => !id) || new Set(ids).size !== ids.length) {
-        status.textContent = 'Informe de 2 a 10 links válidos e diferentes de perfis GeoGuessr.'; return;
+      if (ids.length < 1 || ids.length > MAX_PROFILES || ids.some(id => !id) || new Set(ids).size !== ids.length) {
+        status.textContent = 'Informe de 1 a 10 links válidos e diferentes de perfis GeoGuessr.'; return;
       }
       collect.disabled = true; input.disabled = true; collect.style.opacity = '.5';
       try {
