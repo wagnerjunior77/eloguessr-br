@@ -203,7 +203,7 @@ $('generateGames').onclick=()=>{
 
 
 // Reprodução local dos eventos reais, sem exibir as identidades dos jogadores.
-let replay = {open:false, key:'', id:'', side:'A', events:[], duration:0, position:0, playing:false, frame:0, lastTick:0, marker:null, mapVisible:false};
+let replay = {open:false, key:'', id:'', side:'A', events:[], duration:0, position:0, playing:false, frame:0, lastTick:0, speed:1, timeline:null, marker:null, mapVisible:false};
 const replayCache=new Map();
 function replayKey(){return gameIndex+':'+roundIndex}
 function replayClock(ms){const sec=Math.floor(Math.max(0,ms)/1000);return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0')}
@@ -216,7 +216,7 @@ function stopReplay(){
 function syncReplayContext(){
  const game=data.games[gameIndex];$('replayOpen').hidden=!imported || !game.gameId || !game.replayPlayers;
  if(replay.open && replay.key!==replayKey())stopReplay();
- if(replay.open && replay.events.length){streetRestrictions=null;renderReplay(replay.position)}
+ if(replay.open && replay.events.length){streetRestrictions=null;googleMarkers.forEach(m=>m.setMap(null));googleLines.forEach(l=>l.setMap(null));googleMarkers=[];googleLines=[];renderReplay(replay.position,true)}
 }
 function selectReplay(side){
  replayStopFrame();if(replayRequestTimer)clearTimeout(replayRequestTimer);replayRequestTimer=null;replay.marker?.setMap(null);replay.side=side;replay.events=[];replay.position=0;replay.duration=0;replay.id=crypto.randomUUID();
@@ -241,36 +241,30 @@ function handleReplayMessage(msg){
 function receiveReplay(events){
  replay.events=events.filter(e=>e&&Number.isFinite(e.time)&&e.payload&&typeof e.payload==='object').sort((a,b)=>a.time-b.time);
  if(!replay.events.length){$('replayStatus').textContent='Replay indisponível para esta rodada.';return}
- replay.duration=Math.max(0,replay.events.at(-1).time-replay.events[0].time);replay.position=0;
+ replay.duration=Math.max(0,replay.events.at(-1).time-replay.events[0].time);replay.position=0;replay.timeline=new ReplayTimeline(replay.events);
  $('replayStatus').textContent='';streetRestrictions=null;
  googleMarkers.forEach(m=>m.setMap(null));googleLines.forEach(l=>l.setMap(null));googleMarkers=[];googleLines=[];
- renderReplay(0);startReplay();
+ renderReplay(0,true);startReplay();
 }
-function renderReplay(ms){
- if(!replay.events.length||!streetView||!googleMap)return;
- const end=replay.events[0].time+ms;let pov=null,pano=null,panoZoom=null,mapPos=null,mapZoom=null,pin=null,visible=false;
- for(const event of replay.events){if(event.time>end)break;const p=event.payload;
-  if(event.type==='PanoPov'&&Number.isFinite(p.heading)&&Number.isFinite(p.pitch))pov={heading:p.heading,pitch:p.pitch};
-  else if(event.type==='PanoPosition'&&typeof p.panoId==='string')pano=normalizePanoramaId(p.panoId);
-  else if(event.type==='PanoZoom'&&Number.isFinite(p.zoom))panoZoom=p.zoom;
-  else if(event.type==='MapPosition'&&Number.isFinite(p.lat)&&Number.isFinite(p.lng))mapPos={lat:p.lat,lng:p.lng};
-  else if(event.type==='MapZoom'&&Number.isFinite(p.zoom))mapZoom=p.zoom;
-  else if((event.type==='PinPosition'||event.type==='GuessWithLatLng')&&Number.isFinite(p.lat)&&Number.isFinite(p.lng))pin={lat:p.lat,lng:p.lng};
-  else if(event.type==='MapDisplay')visible=!!p.isActive;
- }
- if(pano&&streetView.getPano()!==pano)streetView.setPano(pano);if(pov)streetView.setPov(pov);if(panoZoom!==null)streetView.setZoom(panoZoom);
- googleMap.setCenter(mapPos||{lat:0,lng:0});googleMap.setZoom(mapZoom!==null?Math.max(0,Math.min(21,mapZoom)):2);
- if(pin){if(!replay.marker)replay.marker=new google.maps.Marker({map:googleMap,position:pin});else{replay.marker.setMap(googleMap);replay.marker.setPosition(pin)}}else if(replay.marker)replay.marker.setMap(null);
- document.querySelector('.scene').classList.toggle('replay-map-visible',visible);
- if(replay.mapVisible!==visible){replay.mapVisible=visible;google.maps.event.trigger(googleMap,'resize')}
+function renderReplay(ms,force=false){
+ if(!replay.timeline||!streetView||!googleMap)return;
+ const {state,changed}=replay.timeline.seek(ms);const has=key=>force||changed.has(key);
+ if(has('pano')&&state.pano){const pano=normalizePanoramaId(state.pano);if(streetView.getPano()!==pano)streetView.setPano(pano)}
+ if(has('pov')&&state.pov)streetView.setPov(state.pov);
+ if(has('panoZoom')&&state.panoZoom!==null)streetView.setZoom(state.panoZoom);
+ if(has('mapPos'))googleMap.setCenter(state.mapPos||{lat:0,lng:0});
+ if(has('mapZoom'))googleMap.setZoom(state.mapZoom!==null?Math.max(0,Math.min(21,state.mapZoom)):2);
+ if(has('pin')){if(state.pin){if(!replay.marker)replay.marker=new google.maps.Marker({map:googleMap,position:state.pin});else{replay.marker.setMap(googleMap);replay.marker.setPosition(state.pin)}}else if(replay.marker)replay.marker.setMap(null)}
+ if(has('visible')){document.querySelector('.scene').classList.toggle('replay-map-visible',state.visible);if(replay.mapVisible!==state.visible){replay.mapVisible=state.visible;google.maps.event.trigger(googleMap,'resize')}}
  $('replaySeek').value=replay.duration?Math.round(ms/replay.duration*1000):0;$('replayTime').textContent=replayClock(ms)+' / '+replayClock(replay.duration);
 }
 function startReplay(){if(!replay.events.length)return;if(replay.position>=replay.duration)replay.position=0;replay.playing=true;replay.lastTick=0;$('replayPlay').textContent='❚❚';replay.frame=requestAnimationFrame(replayTick)}
-function replayTick(now){if(!replay.playing||!replay.open)return;if(replay.lastTick)replay.position=Math.min(replay.duration,replay.position+now-replay.lastTick);replay.lastTick=now;renderReplay(replay.position);if(replay.position>=replay.duration){replayStopFrame();return}replay.frame=requestAnimationFrame(replayTick)}
+function replayTick(now){if(!replay.playing||!replay.open)return;if(replay.lastTick)replay.position=Math.min(replay.duration,replay.position+(now-replay.lastTick)*replay.speed);replay.lastTick=now;renderReplay(replay.position);if(replay.position>=replay.duration){replayStopFrame();return}replay.frame=requestAnimationFrame(replayTick)}
 $('replayOpen').onclick=()=>{replay.open=true;replay.key=replayKey();replay.mapVisible=false;$('replayUI').hidden=false;document.querySelector('.scene').classList.add('replaying');selectReplay('A')};
 $('replayClose').onclick=()=>{stopReplay();lastSceneKey='';render()};
 $('replayA').onclick=()=>selectReplay('A');$('replayB').onclick=()=>selectReplay('B');
 $('replayPlay').onclick=()=>replay.playing?replayStopFrame():startReplay();
+$('replaySpeed').onchange=e=>{replay.speed=Number(e.target.value)||1;replay.lastTick=0};
 $('replaySeek').oninput=e=>{replayStopFrame();replay.position=replay.duration*Number(e.target.value)/1000;renderReplay(replay.position)};
 
 render();
