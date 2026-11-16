@@ -140,7 +140,7 @@ $('jsonFile').onchange=async e=>{const file=e.target.files[0];if(!file)return;tr
 const historyFiles=[];
 $('historyFile').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{const ownerId=DuelImport.parseProfileId($('historyOwner').value);if(!ownerId)throw Error('Informe o link do perfil que exportou o arquivo.');if(file.size>25*1024*1024)throw Error('O arquivo deve ter até 25 MB.');const payload=JSON.parse(await file.text());if(!payload.stores||!Array.isArray(payload.stores.duels)||!Array.isArray(payload.stores.rounds))throw Error('Este não parece ser um export compatível da extensão.');historyFiles.push({ownerId,payload});$('historyStatus').textContent=historyFiles.length+' histórico(s) adicionado(s).';$('profileMessage').textContent='Arquivo carregado somente neste navegador.'}catch(err){$('profileMessage').textContent='Não foi possível adicionar: '+err.message}e.target.value=''};
 $('startHistory').onclick=()=>{try{const lines=$('profileLinks').value.split(/\n+/).map(x=>x.trim()).filter(Boolean);const profiles=lines.map((line,i)=>{const parts=line.split('|').map(x=>x.trim());const url=parts.length>1?parts[parts.length-1]:parts[0];const id=DuelImport.parseProfileId(url);if(!id)throw Error('Confira o link na linha '+(i+1)+'.');return {id,name:parts.length>1?parts[0]:'Jogador '+(i+1),url}});const result=DuelImport.convert(historyFiles,profiles);if(result.missing.length)throw Error('Não foi possível encontrar um duelo distinto para: '+result.missing.map(p=>p.name).join(', ')+'. Adicione outros históricos ou ajuste os perfis.');cancelBridge();activateData(result.data)}catch(err){$('profileMessage').textContent='Não foi possível montar: '+err.message}};
-// A ponte do Tampermonkey usa a sessão aberta no GeoGuessr; nenhum cookie é enviado ao site.
+// O coletor usa a sessão no navegador e consulta diretamente o GeoGuessr.
 const BRIDGE_CHANNEL='eloguessr-bridge-v1';
 let bridgeReady=false, bridgePending=null, bridgeTimer=null;
 function requestBridgeReady(){bridgeReady=false;window.postMessage({channel:BRIDGE_CHANNEL,type:'ping'},location.origin)}
@@ -155,17 +155,17 @@ function bridgeTimeout(message,ms){if(bridgeTimer)clearTimeout(bridgeTimer);cons
 function startBridgeRequest(){
  if(!bridgePending||bridgePending.sent||!bridgeReady)return;
  bridgePending.sent=true;const {id,links}=bridgePending;
- $('profileMessage').textContent='Procurando uma aba do GeoGuessr conectada...';
+ $('profileMessage').textContent='Iniciando consulta ao GeoGuessr...';
  window.postMessage({channel:BRIDGE_CHANNEL,type:'collect',id,links},location.origin);
- bridgeTimeout('Nenhuma aba do GeoGuessr respondeu. Abra o GeoGuessr conectado no mesmo navegador e recarregue a página.',15000);
+ bridgeTimeout('O coletor não respondeu. Atualize o coletor, recarregue esta página e tente novamente.',15000);
 }
 window.addEventListener('message',event=>{
- if(event.source!==window||event.origin!==location.origin||!event.data||event.data.channel!==BRIDGE_CHANNEL)return;
+ if(event.origin!==location.origin||!event.data||event.data.channel!==BRIDGE_CHANNEL)return;
  const msg=event.data;
- if(msg.type==='ready'){const [major,minor]=String(msg.version||'').split('.').map(Number);bridgeReady=major>0||minor>=4;startBridgeRequest();return}
+ if(msg.type==='ready'){const [major,minor]=String(msg.version||'').split('.').map(Number);bridgeReady=major>0||minor>=5;startBridgeRequest();return}
  if(!bridgePending||msg.id!==bridgePending.id)return;
- if(msg.type==='started'){bridgePending.started=true;$('profileMessage').textContent='Conectado ao GeoGuessr. Buscando jogos...';bridgeTimeout('A coleta demorou demais. Confira a aba do GeoGuessr e tente novamente.',120000)}
- else if(msg.type==='progress'&&typeof msg.message==='string'){$('profileMessage').textContent=msg.message;bridgeTimeout('A coleta demorou demais. Confira a aba do GeoGuessr e tente novamente.',120000)}
+ if(msg.type==='started'){bridgePending.started=true;$('profileMessage').textContent='Conectado ao GeoGuessr. Buscando jogos...';bridgeTimeout('A coleta demorou demais. Verifique sua conexão e tente novamente.',120000)}
+ else if(msg.type==='progress'&&typeof msg.message==='string'){$('profileMessage').textContent=msg.message;bridgeTimeout('A coleta demorou demais. Verifique sua conexão e tente novamente.',120000)}
  else if(msg.type==='error'){const message=typeof msg.message==='string'?msg.message:'Não foi possível coletar os jogos.';bridgeReset();$('profileMessage').textContent=message}
  else if(msg.type==='result'){try{const selected=validate(msg.data),expected=new Set(bridgePending.links.map(link=>DuelImport.parseProfileId(link)));if(selected.profiles.length!==expected.size||selected.profiles.some(p=>!expected.has(p.id.toLowerCase())))throw Error('Os perfis recebidos não correspondem aos solicitados.');bridgeReset();activateData(selected);$('profileMessage').textContent=''}catch(error){bridgeReset();$('profileMessage').textContent='Não foi possível carregar: '+error.message}}
 });
@@ -179,7 +179,7 @@ $('generateGames').onclick=()=>{
  bridgePending={id,links,sent:false,started:false};$('generateGames').disabled=true;$('profileMessage').textContent='Procurando o coletor...';requestBridgeReady();
  bridgeTimer=setTimeout(()=>{
   if(!bridgePending||bridgePending.id!==id||bridgePending.sent)return;
-  bridgeReset();$('profileMessage').textContent='Instale ou atualize o coletor, depois recarregue o Eloguessr e o GeoGuessr.';
+  bridgeReset();$('profileMessage').textContent='Instale ou atualize o coletor, depois recarregue esta página.';
  },2000);
 };
 

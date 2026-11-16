@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name         Eloguessr • Coletar duelos
 // @namespace    eloguessr-local
-// @version      0.4.0
-// @description  Carrega duelos no Eloguessr usando sua sessão aberta do GeoGuessr.
+// @version      0.5.0
+// @description  Carrega duelos no Eloguessr usando sua sessão do GeoGuessr.
 // @match        https://www.geoguessr.com/*
 // @match        https://quem-jogou-eloguessr.novelalpaca1.chatgpt.site/*
 // @run-at       document-start
 // @noframes
+// @connect      geoguessr.com
+// @grant        GM_xmlhttpRequest
 // @grant        GM_registerMenuCommand
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -17,11 +19,11 @@
 
 /*
 COMO USAR
-1. Atualize este userscript no Tampermonkey e recarregue o GeoGuessr e o Eloguessr.
-2. Deixe ao menos uma aba do GeoGuessr aberta e conectada no mesmo navegador.
+1. Atualize este userscript no Tampermonkey e recarregue o Eloguessr.
+2. Entre no GeoGuessr no mesmo navegador. Depois, a aba pode ser fechada.
 3. Em Perfis no Eloguessr, cole os links e clique em Gerar jogos.
-A busca só começa quando você clica. A sessão e os cookies ficam no GeoGuessr;
-os dados das partidas passam diretamente entre as abas do mesmo navegador.
+A extensão consulta apenas os servidores do GeoGuessr com a sessão do navegador;
+a chave de sessão não é enviada ao Eloguessr.
 O menu anterior para baixar JSON continua disponível no GeoGuessr.
 */
 (function () {
@@ -49,8 +51,19 @@ O menu anterior para baixar JSON continua disponível no GeoGuessr.
   }
   async function json(url) {
     let response;
-    try { response = await fetch(url, { credentials: 'include' }); }
-    catch (_) { throw new Error('A conexão foi bloqueada ou falhou. O navegador ou o GeoGuessr pode ter bloqueado o acesso entre domínios (CORS).'); }
+    try {
+      if (location.origin === SITE_ORIGIN) {
+        const parsed = new URL(url);
+        if (parsed.protocol !== 'https:' || !['www.geoguessr.com', 'game-server.geoguessr.com'].includes(parsed.hostname)) throw new Error('Destino inválido');
+        response = await new Promise((resolve, reject) => GM_xmlhttpRequest({
+          method: 'GET', url, responseType: 'json', fetch: true,
+          cookiePartition: { topLevelSite: 'https://www.geoguessr.com' },
+          timeout: 30000,
+          onload: r => resolve({ status: r.status, ok: r.status >= 200 && r.status < 300, json: async () => r.response }),
+          onerror: reject, ontimeout: reject, onabort: reject
+        }));
+      } else response = await fetch(url, { credentials: 'include' });
+    } catch (_) { throw new Error('Não foi possível conectar ao GeoGuessr. Verifique a conexão e as permissões do coletor.'); }
     if (response.status === 401 || response.status === 403)
       throw new Error(`Acesso negado pelo GeoGuessr (HTTP ${response.status}). Confirme que está conectado e que sua conta pode acessar o histórico.`);
     if (response.status === 429) throw new Error('O GeoGuessr limitou as consultas (HTTP 429). Aguarde antes de tentar novamente.');
@@ -180,39 +193,25 @@ O menu anterior para baixar JSON continua disponível no GeoGuessr.
   if (location.origin === SITE_ORIGIN) {
     const active = new Map();
     const reply = message => window.postMessage({ channel: CHANNEL, ...message }, SITE_ORIGIN);
-    const cancel = id => {
-      if (!validId(id)) return;
-      const listener = active.get(id);
-      if (listener !== undefined) { GM_removeValueChangeListener(listener); active.delete(id); }
-      const queued = GM_getValue(REQUEST_KEY, null);
-      if (queued && queued.id === id) GM_deleteValue(REQUEST_KEY);
-      GM_setValue(CANCEL_PREFIX + id, true); GM_deleteValue(RESPONSE_PREFIX + id);
-      setTimeout(() => GM_deleteValue(CANCEL_PREFIX + id), 180000);
-    };
     window.addEventListener('message', event => {
-      if (event.source !== window || event.origin !== SITE_ORIGIN || !event.data || event.data.channel !== CHANNEL) return;
+      if (event.origin !== SITE_ORIGIN || !event.data || event.data.channel !== CHANNEL) return;
       const message = event.data;
-      if (message.type === 'ping') { reply({ type: 'ready', version: '0.4.0' }); return; }
-      if (message.type === 'cancel') { cancel(message.id); return; }
+      if (message.type === 'ping') { reply({ type: 'ready', version: '0.5.0' }); return; }
+      if (message.type === 'cancel') { if (active.has(message.id)) active.get(message.id).cancelled = true; return; }
       if (message.type !== 'collect' || !validId(message.id) || !Array.isArray(message.links) || active.has(message.id)) return;
       if (message.links.length < 1 || message.links.length > MAX_PROFILES || message.links.some(link => !getId(link))) {
         reply({ type: 'error', id: message.id, message: 'Confira os links dos perfis.' }); return;
       }
-      const key = RESPONSE_PREFIX + message.id;
-      const listener = GM_addValueChangeListener(key, (_name, _oldValue, value, remote) => {
-        if (!remote || !value || value.id !== message.id || !['started','progress','result','error'].includes(value.type)) return;
-        reply(value);
-        if (value.type === 'result' || value.type === 'error') {
-          GM_removeValueChangeListener(listener); active.delete(message.id); GM_deleteValue(key);
-        }
-      });
-      active.set(message.id, listener);
-      GM_setValue(REQUEST_KEY, { id: message.id, links: message.links, createdAt: Date.now() });
+      const state = { cancelled: false }; active.set(message.id, state);
+      const send = (type, extra = {}) => { if (!state.cancelled) reply({ id: message.id, type, ...extra }); };
+      send('started');
+      collectProfiles(message.links, progress => send('progress', { message: progress }), () => state.cancelled)
+        .then(data => send('result', { data }))
+        .catch(error => send('error', { message: error && error.message || 'Não foi possível coletar as partidas.' }))
+        .finally(() => active.delete(message.id));
     });
-    window.addEventListener('pagehide', () => {
-      for (const id of [...active.keys()]) cancel(id);
-    });
-    reply({ type: 'ready', version: '0.4.0' });
+    window.addEventListener('pagehide', () => { for (const state of active.values()) state.cancelled = true; });
+    reply({ type: 'ready', version: '0.5.0' });
     return;
   }
   if (location.origin !== 'https://www.geoguessr.com') return;

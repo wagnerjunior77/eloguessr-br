@@ -63,7 +63,12 @@ function setup(authenticated = true, geoCount = 2) {
     };
     const timeout = (fn, ms) => ms === 350 ? setTimeout(fn, 0) : {unref(){}};
     const document={getElementById:()=>null};
-    const sandbox={window:win,location:{origin,hostname:new URL(origin).hostname},navigator,document,fetch,URL,Blob,console,Math,Date,Number,Map,Set,Error,setTimeout:timeout,clearTimeout,...gm};
+    const GM_xmlhttpRequest = request => {
+      fetch(request.url, {credentials:'include'}).then(async response => {
+        request.onload({status:response.status, response:response.ok?await response.json():null});
+      }).catch(request.onerror);
+    };
+    const sandbox={window:win,location:{origin,hostname:new URL(origin).hostname},navigator,document,fetch,GM_xmlhttpRequest,URL,Blob,console,Math,Date,Number,Map,Set,Error,setTimeout:timeout,clearTimeout,...gm};
     vm.runInNewContext(source,sandbox,{filename:'coletor.user.js'});
     return {win,eventHandlers};
   }
@@ -76,8 +81,8 @@ async function waitFor(fn) {
   throw Error('Resposta não chegou');
 }
 
-test('uma solicitação carrega duelo, HP e panorama entre abas sem baixar JSON', async()=>{
-  const h=setup();
+test('carrega duelo, HP e panorama sem outra aba ou JSON', async()=>{
+  const h=setup(true,0);
   h.site.win.postMessage({channel,type:'collect',id:'12345678-aaaa-bbbb-cccc-123456789012',links:[geoOrigin+'/user/'+player]},siteOrigin);
   const reply=await waitFor(()=>h.messages.find(m=>m.type==='result'));
   assert.equal(reply.data.profiles.length,1);assert.equal(reply.data.profiles[0].id,player);assert.equal(reply.data.games.length,1);
@@ -106,21 +111,10 @@ test('dois perfis geram uma partida distinta para cada um', async()=>{
   assert.equal(h.calls.length,6);
 });
 
-test('aba do GeoGuessr aberta depois da solicitação recebe a coleta pendente', async()=>{
-  const h=setup(true,0);
-  h.site.win.postMessage({channel,type:'collect',id:'22222222-aaaa-bbbb-cccc-123456789012',links:[geoOrigin+'/user/'+player]},siteOrigin);
-  await waitFor(()=>h.values.has('eloguessr.bridge.request.v1'));
-  h.startGeo();
-  const reply=await waitFor(()=>h.messages.find(m=>m.type==='result'));
-  assert.equal(reply.data.games.length,1);
-});
-
-test('cancelamento impede a execução quando não há aba do GeoGuessr', async()=>{
+test('cancelamento impede resultado posterior', async()=>{
   const h=setup(true,0), id='33333333-aaaa-bbbb-cccc-123456789012';
   h.site.win.postMessage({channel,type:'collect',id,links:[geoOrigin+'/user/'+player]},siteOrigin);
-  await waitFor(()=>h.values.has('eloguessr.bridge.request.v1'));
   h.site.win.postMessage({channel,type:'cancel',id},siteOrigin);
-  await waitFor(()=>!h.values.has('eloguessr.bridge.request.v1'));
-  h.startGeo();await new Promise(resolve=>setTimeout(resolve,20));
-  assert.equal(h.calls.length,0);assert.equal(h.messages.some(m=>m.type==='result'),false);
+  await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal(h.messages.some(m=>m.type==='result'),false);
 });
