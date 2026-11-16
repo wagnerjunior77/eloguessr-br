@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         Eloguessr • Coletar duelos
 // @namespace    eloguessr-local
-// @version      0.8.0
+// @version      0.10.0
 // @description  Carrega duelos no Eloguessr usando sua sessão do GeoGuessr.
 // @match        https://www.geoguessr.com/*
 // @match        https://quem-jogou-eloguessr.novelalpaca1.chatgpt.site/*
+// @match        https://desktop-7phjkom.taile8b23c.ts.net/*
 // @run-at       document-start
 // @noframes
 // @connect      geoguessr.com
@@ -28,7 +29,7 @@ O menu anterior para baixar JSON continua disponível no GeoGuessr.
 */
 (function () {
   'use strict';
-  const MAX_PROFILES = 10, MAX_DUELS_PER_PROFILE = 8;
+  const MAX_PROFILES = 10, MAX_DUELS_PER_PROFILE = 8, MAX_SAVED_IDS = 2000;
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
   function getId(value) {
     try {
@@ -52,7 +53,7 @@ O menu anterior para baixar JSON continua disponível no GeoGuessr.
   async function json(url) {
     let response;
     try {
-      if (location.origin === SITE_ORIGIN) {
+      if (IS_SITE) {
         const parsed = new URL(url);
         if (parsed.protocol !== 'https:' || !['www.geoguessr.com', 'game-server.geoguessr.com'].includes(parsed.hostname)) throw new Error('Destino inválido');
         response = await new Promise((resolve, reject) => GM_xmlhttpRequest({
@@ -81,6 +82,17 @@ O menu anterior para baixar JSON continua disponível no GeoGuessr.
       throw new Error('O formato do histórico mudou: não encontrei uma lista gameIds.');
     return [...new Set(list.map(x => typeof x === 'string' ? x : x && (x.gameId || x.id))
       .filter(x => typeof x === 'string' && /^[a-z0-9-]{8,100}$/i.test(x)))];
+  }
+  function rememberHistory(playerId, latest) {
+    const key = 'eloguessr.history.ids.v1.' + playerId;
+    let saved = [];
+    try {
+      const value = GM_getValue(key, []);
+      if (Array.isArray(value)) saved = value.filter(x => typeof x === 'string' && /^[a-z0-9-]{8,100}$/i.test(x));
+    } catch (_) { /* A coleta ainda funciona se o armazenamento estiver indisponível. */ }
+    const combined = [...new Set([...latest, ...saved])].slice(0, MAX_SAVED_IDS);
+    try { GM_setValue(key, combined); } catch (_) { /* O sorteio usa os IDs disponíveis nesta coleta. */ }
+    return combined;
   }
   function extract(duel, playerId, gameId) {
     if (!duel || duel.status !== 'Finished' || !duel.result || !Array.isArray(duel.teams) || duel.teams.length !== 2 ||
@@ -165,7 +177,8 @@ O menu anterior para baixar JSON continua disponível no GeoGuessr.
       if (!user || typeof user.nick !== 'string') throw new Error('O perfil retornado não contém um nome reconhecível.');
       const p = { id, name: user.nick, url: cleanLinks[i] }; profiles.push(p);
       const history = await json('https://www.geoguessr.com/api/v4/game-history/' + encodeURIComponent(id) + '/game-ids');
-      const games = shuffle(gameIds(history)).slice(0, mode === 'any' ? MAX_DUELS_PER_PROFILE : 30), usable = [];
+      const pool = rememberHistory(id, gameIds(history));
+      const games = shuffle(pool).slice(0, mode === 'any' ? MAX_DUELS_PER_PROFILE : 30), usable = [];
       for (let n = 0; n < games.length; n++) {
         if (isCancelled()) throw new Error('Coleta cancelada.');
         progress(`Analisando ${p.name}: duelo ${n + 1} de ${games.length}...`);
@@ -191,20 +204,22 @@ O menu anterior para baixar JSON continua disponível no GeoGuessr.
     return { profiles, games: chosen.games };
   }
 
-  const SITE_ORIGIN = 'https://quem-jogou-eloguessr.novelalpaca1.chatgpt.site';
+  const SITE_ORIGINS = ['https://quem-jogou-eloguessr.novelalpaca1.chatgpt.site', 'https://desktop-7phjkom.taile8b23c.ts.net:8443', 'https://desktop-7phjkom.taile8b23c.ts.net'];
+  const IS_SITE = SITE_ORIGINS.includes(location.origin) && (location.origin !== 'https://desktop-7phjkom.taile8b23c.ts.net' || location.pathname.startsWith('/eloguessr/'));
+  const SITE_ORIGIN = IS_SITE ? location.origin : SITE_ORIGINS[0];
   const REQUEST_KEY = 'eloguessr.bridge.request.v1';
   const RESPONSE_PREFIX = 'eloguessr.bridge.response.v1.';
   const CANCEL_PREFIX = 'eloguessr.bridge.cancel.v1.';
   const CHANNEL = 'eloguessr-bridge-v1';
   const validId = id => typeof id === 'string' && /^[a-z0-9-]{20,80}$/i.test(id);
 
-  if (location.origin === SITE_ORIGIN) {
+  if (IS_SITE) {
     const active = new Map();
     const reply = message => window.postMessage({ channel: CHANNEL, ...message }, SITE_ORIGIN);
     window.addEventListener('message', event => {
       if (event.origin !== SITE_ORIGIN || !event.data || event.data.channel !== CHANNEL) return;
       const message = event.data;
-      if (message.type === 'ping') { reply({ type: 'ready', version: '0.8.0' }); return; }
+      if (message.type === 'ping') { reply({ type: 'ready', version: '0.10.0' }); return; }
       if (message.type === 'cancel') { if (active.has(message.id)) active.get(message.id).cancelled = true; return; }
       if (message.type === 'replay' && validId(message.id)) {
         const { gameId, playerId, round } = message;
@@ -232,7 +247,7 @@ O menu anterior para baixar JSON continua disponível no GeoGuessr.
         .finally(() => active.delete(message.id));
     });
     window.addEventListener('pagehide', () => { for (const state of active.values()) state.cancelled = true; });
-    reply({ type: 'ready', version: '0.8.0' });
+    reply({ type: 'ready', version: '0.10.0' });
     return;
   }
   if (location.origin !== 'https://www.geoguessr.com') return;

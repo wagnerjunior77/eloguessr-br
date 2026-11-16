@@ -95,6 +95,15 @@ test('carrega duelo, HP e panorama sem outra aba ou JSON', async()=>{
   assert.equal(JSON.stringify(reply.data).includes('cookie'),false);
 });
 
+test('acumula IDs anteriores e inclui jogos que saíram da lista recente', async()=>{
+  const h=setup(true,0), key='eloguessr.history.ids.v1.'+player;
+  h.values.set(key,[gameId2,gameId2,'invalido!']);
+  h.site.win.postMessage({channel,type:'collect',mode:'any',id:'12345678-aaaa-bbbb-cccc-123456789012',links:[geoOrigin+'/user/'+player]},siteOrigin);
+  await waitFor(()=>h.messages.find(m=>m.type==='result'));
+  assert.deepEqual(Array.from(h.values.get(key)),[gameId,gameId2]);
+  assert.ok(h.calls.some(call=>call.url.endsWith('/'+gameId2)),'o duelo anterior deve entrar na amostra');
+});
+
 test('sessão ausente produz erro e não retorna jogos', async()=>{
   const h=setup(false);
   h.site.win.postMessage({channel,type:'collect',mode:'any',id:'99999999-aaaa-bbbb-cccc-123456789012',links:[geoOrigin+'/user/'+player]},siteOrigin);

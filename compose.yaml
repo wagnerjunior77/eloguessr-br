@@ -1,0 +1,9 @@
+services:
+  eloguessr:
+    build: .
+    container_name: eloguessr
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8765:3000"
+    env_file:
+      - .env

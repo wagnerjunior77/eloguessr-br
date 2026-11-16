@@ -34,7 +34,7 @@ function render(){
   const used=Object.entries(answers).find(([index,id])=>Number(index)!==gameIndex && id===p.id);
   const b=make('button','player-option'+(selected?' selected':'')+(used?' unavailable':''));
   b.setAttribute('aria-pressed',String(selected));b.disabled=revealed||Boolean(used);
-  const av=make('span','avatar',p.name.trim().slice(0,2).toUpperCase());if(/^[a-f0-9]{24}$/i.test(p.id)){const img=make('img');img.alt='';img.onload=()=>{av.replaceChildren(img)};img.src='/avatar/'+encodeURIComponent(p.id)}const info=make('span','option-text');info.append(make('strong','',p.name));
+  const av=make('span','avatar',p.name.trim().slice(0,2).toUpperCase());if(/^[a-f0-9]{24}$/i.test(p.id)){const img=make('img');img.alt='';img.onload=()=>{av.replaceChildren(img)};img.src=new URL('avatar/'+encodeURIComponent(p.id),document.baseURI).href}const info=make('span','option-text');info.append(make('strong','',p.name));
   if(used){const label='Escolhido no Jogo '+String(Number(used[0])+1).padStart(2,'0');info.append(make('small','',label));b.title=label+'. Remova a seleção naquele jogo para usar este jogador.'}
   b.append(av,info,make('span','radio'));b.onclick=()=>{if(revealed)return;if(selected)delete answers[gameIndex];else answers[gameIndex]=p.id;render()};$('playerOptions').append(b)
  });
@@ -180,7 +180,7 @@ window.addEventListener('message',event=>{
  if(event.origin!==location.origin||!event.data||event.data.channel!==BRIDGE_CHANNEL)return;
  const msg=event.data;
  if(msg.type==='replay-result'||msg.type==='replay-error'){handleReplayMessage(msg);return}
- if(msg.type==='ready'){const [major=0,minor=0,patch=0]=String(msg.version||'').split('.').map(Number);bridgeReady=major>0||minor>=8;startBridgeRequest();return}
+ if(msg.type==='ready'){const [major=0,minor=0,patch=0]=String(msg.version||'').split('.').map(Number);bridgeReady=major>0||minor>=10;startBridgeRequest();return}
  if(!bridgePending||msg.id!==bridgePending.id)return;
  if(msg.type==='started'){bridgePending.started=true;$('profileMessage').textContent='Conectado ao GeoGuessr. Buscando jogos...';bridgeTimeout('A coleta demorou demais. Verifique sua conexão e tente novamente.',120000)}
  else if(msg.type==='progress'&&typeof msg.message==='string'){$('profileMessage').textContent=msg.message;bridgeTimeout('A coleta demorou demais. Verifique sua conexão e tente novamente.',120000)}
