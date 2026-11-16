@@ -115,20 +115,20 @@ function updateStreetView(round){
  });
 }
 function useOpenStreetMap(message='Mapa atual: OpenStreetMap.'){
- hideEmbed();googleActive=false;lastSceneKey='';$('mapsStatus').textContent=message;document.querySelector('.map-kicker').textContent=message.startsWith('Mapa atual')?'MAPA DO ROUND · OPENSTREETMAP':'GOOGLE INDISPONÍVEL · OPENSTREETMAP';render();
+ hideEmbed();googleActive=false;lastSceneKey='';$('mapsStatus').textContent=message;render();
 }
 function showMapError(message){const banner=$('mapErrorBanner');banner.textContent=message;banner.hidden=false}
 window.gm_authFailure=()=>{googleAuthFailed=true;googleReady=false;$('enableGoogle').disabled=false;const message='Não foi possível autorizar o Google Maps. Confira se a Maps JavaScript API está ativa, o faturamento e a restrição do domínio no Google Cloud.';showMapError(message);useOpenStreetMap(message)};
 $('enableEmbed').onclick=()=>{const value=$('embedKey').value.trim();if(!value){$('mapsStatus').textContent='Informe uma chave com a Maps Embed API ativada.';return}embedKey=value;$('embedKey').value='';embedActive=true;googleActive=false;streetViewRequest++;lastEmbedScene='';if(map){map.remove();map=null;mapLayer=null}document.querySelector('.map-kicker').textContent='MAPA INDISPONÍVEL';$('mapsStatus').textContent='Street View Embed selecionado. O carregamento depende da chave e do panorama.';$('mapsDialog').close();render()};
-$('mapsButton').onclick=()=>$('mapsDialog').showModal();$('closeMaps').onclick=()=>$('mapsDialog').close();$('useOsm').onclick=()=>{useOpenStreetMap();$('mapsDialog').close()};
+$('closeMaps').onclick=()=>$('mapsDialog').close();$('useOsm').onclick=()=>{useOpenStreetMap();$('mapsDialog').close()};
 function enableGoogleMaps(configuredKey){
  const key=configuredKey||$('mapsKey').value.trim()||googleKeyUsed;if(!key){$('mapsStatus').textContent='Informe uma chave da Maps JavaScript API.';return}
  if(googleKeyUsed && key!==googleKeyUsed){$('mapsStatus').textContent='Para usar outra chave, recarregue esta página e tente novamente.';return}
- if(googleReady){hideEmbed();googleActive=true;googleMap=null;lastSceneKey='';document.querySelector('.map-kicker').textContent='MAPA DO ROUND · GOOGLE MAPS';$('mapsStatus').textContent='Google Maps ativado.';$('mapsDialog').close();render();return}
+ if(googleReady){hideEmbed();googleActive=true;googleMap=null;lastSceneKey='';$('mapsStatus').textContent='Google Maps ativado.';$('mapsDialog').close();render();return}
  if(googleKeyUsed){$('mapsStatus').textContent='Recarregue a página para tentar novamente.';return}
  googleKeyUsed=key;$('mapsStatus').textContent='Carregando Google Maps...';$('enableGoogle').disabled=true;
  const sdk=document.createElement('script');sdk.async=true;sdk.src='https://maps.googleapis.com/maps/api/js?key='+encodeURIComponent(key)+'&loading=async&callback=eloguessrMapsReady';
- window.eloguessrMapsReady=()=>{if(googleAuthFailed)return;hideEmbed();googleReady=true;googleActive=true;document.querySelector('.map-kicker').textContent='MAPA DO ROUND · GOOGLE MAPS';$('enableGoogle').disabled=false;$('mapsKey').value='';$('mapsStatus').textContent='Google Maps carregado; a autorização é verificada pelo Google.';$('mapErrorBanner').hidden=true;if($('mapsDialog').open)$('mapsDialog').close();lastSceneKey='';render()};
+ window.eloguessrMapsReady=()=>{if(googleAuthFailed)return;hideEmbed();googleReady=true;googleActive=true;$('enableGoogle').disabled=false;$('mapsKey').value='';$('mapsStatus').textContent='Google Maps carregado; a autorização é verificada pelo Google.';$('mapErrorBanner').hidden=true;if($('mapsDialog').open)$('mapsDialog').close();lastSceneKey='';render()};
  sdk.onerror=()=>{$('enableGoogle').disabled=false;const message='Não foi possível carregar o Google Maps. Verifique a conexão e recarregue a página para tentar novamente.';showMapError(message);useOpenStreetMap(message)};document.head.append(sdk);
 }
 $('enableGoogle').onclick=()=>enableGoogleMaps();
